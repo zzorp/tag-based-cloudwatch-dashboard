@@ -1,0 +1,1042 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`AlarmDashboardStack Snapshot should match the snapshot 1`] = `
+{
+  "Outputs": {
+    "CustomDynamoDBFunctionRoleArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "CloudWatchAlarmDynamoDBHandlerExecutionRoleECC90A6A",
+          "Arn",
+        ],
+      },
+    },
+    "CustomEventBusArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "CloudWatchEventBus8332C820",
+          "Arn",
+        ],
+      },
+    },
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+  },
+  "Resources": {
+    "AlarmCWCustomFunction0548B083": {
+      "DependsOn": [
+        "alarmCWCustomFunctionExecutionRoleDefaultPolicy49038102",
+        "alarmCWCustomFunctionExecutionRole34A75FC8",
+      ],
+      "Properties": {
+        "Architectures": [
+          "x86_64",
+        ],
+        "Code": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-\${AWS::Region}",
+          },
+          "S3Key": "dbaca849646dcdfca151521dcd80f4b23a393389ef0079d178b5674e583efd10.zip",
+        },
+        "Handler": "app.lambda_handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "alarmCWCustomFunctionExecutionRole34A75FC8",
+            "Arn",
+          ],
+        },
+        "Runtime": "python3.11",
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "AlarmDashboardCDK810417D5": {
+      "Properties": {
+        "DashboardBody": {
+          "Fn::Join": [
+            "",
+            [
+              "{"widgets":[{"type":"custom","width":24,"height":10,"x":0,"y":0,"properties":{"endpoint":"",
+              {
+                "Fn::GetAtt": [
+                  "AlarmCWCustomFunction0548B083",
+                  "Arn",
+                ],
+              },
+              "","title":"Alarms","updateOn":{"refresh":true,"resize":true,"timeRange":false}}},{"type":"custom","width":24,"height":26,"x":0,"y":10,"properties":{"endpoint":"",
+              {
+                "Fn::GetAtt": [
+                  "AlarmListCWCustomFunction5FF0B9C8",
+                  "Arn",
+                ],
+              },
+              "","title":"Alarm List","updateOn":{"refresh":true,"resize":true,"timeRange":false}}}]}",
+            ],
+          ],
+        },
+        "DashboardName": "AlarmDashboardCDK",
+      },
+      "Type": "AWS::CloudWatch::Dashboard",
+    },
+    "AlarmListCWCustomFunction5FF0B9C8": {
+      "DependsOn": [
+        "alarmListCWCustomFunctionRoleDefaultPolicyB65B0345",
+        "alarmListCWCustomFunctionRoleAED95124",
+      ],
+      "Properties": {
+        "Architectures": [
+          "x86_64",
+        ],
+        "Code": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-\${AWS::Region}",
+          },
+          "S3Key": "bea072eaa088fc74cc219a68fe9cb04bd5332624e58c6adc21ba97c40b3989f6.zip",
+        },
+        "Handler": "app.lambda_handler",
+        "MemorySize": 165,
+        "Role": {
+          "Fn::GetAtt": [
+            "alarmListCWCustomFunctionRoleAED95124",
+            "Arn",
+          ],
+        },
+        "Runtime": "python3.11",
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "CloudWatchAlarmConfigurationHandlerExecutionRole1C7FF4EB": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "id": "AwsSolutions-IAM5",
+              "reason": "Need CloudWatchAlarmHandlerExecutionRole to write to arbitrary log groups",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "CloudWatchAlarm Configuration Handler Role",
+        "RoleName": "CloudWatchAlarmConfigurationHandlerExecutionRole",
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "CloudWatchAlarmConfigurationHandlerExecutionRoleDefaultPolicyE717A596": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "id": "AwsSolutions-IAM5",
+              "reason": "Need CloudWatchAlarmHandlerExecutionRole to write to arbitrary log groups",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "dynamodb:UpdateItem",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "CloudWatchAlarmDynamoDBTableBBA2ACBE",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": [
+                "ssm:GetParameter",
+                "ssm:PutParameter",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:aws:ssm:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":parameter/CloudWatchAlarmWidgetConfigCDK",
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "CloudWatchAlarmConfigurationHandlerExecutionRoleDefaultPolicyE717A596",
+        "Roles": [
+          {
+            "Ref": "CloudWatchAlarmConfigurationHandlerExecutionRole1C7FF4EB",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "CloudWatchAlarmDynamoDBHandlerExecutionRoleDefaultPolicy4DFC4B2D": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "id": "AwsSolutions-IAM5",
+              "reason": "Need CloudWatchAlarmDynamoDBHandlerExecutionRole role to write to arbitrary log groups. For STS the function need to assume roles that have dynamic naming",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "dynamodb:PutItem",
+                "dynamodb:GetItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:GetRecords",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "CloudWatchAlarmDynamoDBTableBBA2ACBE",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": [
+                "organizations:DescribeAccount",
+                "organizations:ListAccounts",
+                "account:GetAlternateContact",
+                "account:GetContactInformation",
+                "account:ListRegions",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Resource": "arn:aws:iam::*:role/CrossAccountAlarmAugmentationAssumeRole-*",
+            },
+            {
+              "Action": "ec2:DescribeInstances",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "cloudwatch:ListTagsForResource",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "ssm:GetParameter",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ssm:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":parameter/",
+                    {
+                      "Ref": "ConfigParameterD4506805",
+                    },
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "CloudWatchAlarmDynamoDBHandlerExecutionRoleDefaultPolicy4DFC4B2D",
+        "Roles": [
+          {
+            "Ref": "CloudWatchAlarmDynamoDBHandlerExecutionRoleECC90A6A",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "CloudWatchAlarmDynamoDBHandlerExecutionRoleECC90A6A": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "id": "AwsSolutions-IAM5",
+              "reason": "Need CloudWatchAlarmDynamoDBHandlerExecutionRole role to write to arbitrary log groups. For STS the function need to assume roles that have dynamic naming",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "CloudWatchAlarmDynamoDB Handler Role",
+        "RoleName": "CloudWatchAlarmDynamoDBHandlerExecutionRole",
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "CloudWatchAlarmDynamoDBHandlerFunction4184D83C": {
+      "DependsOn": [
+        "CloudWatchAlarmDynamoDBHandlerExecutionRoleDefaultPolicy4DFC4B2D",
+        "CloudWatchAlarmDynamoDBHandlerExecutionRoleECC90A6A",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-\${AWS::Region}",
+          },
+          "S3Key": "2452abcc4788526b29799e94eac50ed737e173c0f0029b77adbac32d1b19e052.zip",
+        },
+        "FunctionName": "CloudWatchAlarmDynamoDBHandlerCDK",
+        "Handler": "app.lambda_handler",
+        "MemorySize": 256,
+        "Role": {
+          "Fn::GetAtt": [
+            "CloudWatchAlarmDynamoDBHandlerExecutionRoleECC90A6A",
+            "Arn",
+          ],
+        },
+        "Runtime": "python3.11",
+        "Timeout": 60,
+        "TracingConfig": {
+          "Mode": "Active",
+        },
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "CloudWatchAlarmDynamoDBTableBBA2ACBE": {
+      "DeletionPolicy": "Delete",
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "id": "AwsSolutions-DDB3",
+              "reason": "Alarm data doesn't require PITR",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "alarmKey",
+            "AttributeType": "S",
+          },
+          {
+            "AttributeName": "stateValue",
+            "AttributeType": "S",
+          },
+          {
+            "AttributeName": "suppressed",
+            "AttributeType": "N",
+          },
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "AlarmKeyIndex",
+            "KeySchema": [
+              {
+                "AttributeName": "alarmKey",
+                "KeyType": "HASH",
+              },
+            ],
+            "Projection": {
+              "ProjectionType": "ALL",
+            },
+          },
+          {
+            "IndexName": "StateValueIndex",
+            "KeySchema": [
+              {
+                "AttributeName": "stateValue",
+                "KeyType": "HASH",
+              },
+            ],
+            "Projection": {
+              "ProjectionType": "ALL",
+            },
+          },
+          {
+            "IndexName": "SuppressionIndex",
+            "KeySchema": [
+              {
+                "AttributeName": "suppressed",
+                "KeyType": "HASH",
+              },
+            ],
+            "Projection": {
+              "ProjectionType": "ALL",
+            },
+          },
+          {
+            "IndexName": "NonSuppressedAlarms",
+            "KeySchema": [
+              {
+                "AttributeName": "stateValue",
+                "KeyType": "HASH",
+              },
+              {
+                "AttributeName": "suppressed",
+                "KeyType": "RANGE",
+              },
+            ],
+            "Projection": {
+              "ProjectionType": "ALL",
+            },
+          },
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "alarmKey",
+            "KeyType": "HASH",
+          },
+        ],
+        "TableName": "AlarmStateChangeTableCDK",
+        "Tags": [
+          {
+            "Key": "auto-delete",
+            "Value": "never",
+          },
+        ],
+      },
+      "Type": "AWS::DynamoDB::Table",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "CloudWatchEventBus8332C820": {
+      "Properties": {
+        "Name": "CWAlarmEventBusCDK",
+      },
+      "Type": "AWS::Events::EventBus",
+    },
+    "CloudWatchEventBusPolicyDFEA2935": {
+      "Properties": {
+        "EventBusName": {
+          "Ref": "CloudWatchEventBus8332C820",
+        },
+        "Statement": {
+          "Action": "events:PutEvents",
+          "Condition": {
+            "StringEquals": {
+              "aws:PrincipalOrgId": "o-testorg12345",
+            },
+          },
+          "Effect": "Allow",
+          "Principal": "*",
+          "Resource": {
+            "Fn::GetAtt": [
+              "CloudWatchEventBus8332C820",
+              "Arn",
+            ],
+          },
+          "Sid": "AllowPutFromAllOrg",
+        },
+        "StatementId": "AllowPutFromAllOrg",
+      },
+      "Type": "AWS::Events::EventBusPolicy",
+    },
+    "ConfigParameterD4506805": {
+      "Properties": {
+        "Description": "Config for CloudWatch Alarm Widgets",
+        "Name": "CloudWatchAlarmWidgetConfigCDK",
+        "Type": "String",
+        "Value": {
+          "Fn::Join": [
+            "",
+            [
+              "{"dynamoTableARN":"",
+              {
+                "Fn::GetAtt": [
+                  "CloudWatchAlarmDynamoDBTableBBA2ACBE",
+                  "Arn",
+                ],
+              },
+              "","dynamoTableName":"",
+              {
+                "Ref": "CloudWatchAlarmDynamoDBTableBBA2ACBE",
+              },
+              "","eventBusARN":"",
+              {
+                "Fn::GetAtt": [
+                  "CloudWatchEventBus8332C820",
+                  "Arn",
+                ],
+              },
+              "","compact":0,"configuratorLambdaFunction":"",
+              {
+                "Fn::GetAtt": [
+                  "configurationHandlerLambdaFunctionE7FBFD5C",
+                  "Arn",
+                ],
+              },
+              "","alarmViewListSize":100}",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "DDBHandlerTrigger32DB9CB6": {
+      "Properties": {
+        "EventBusName": {
+          "Ref": "CloudWatchEventBus8332C820",
+        },
+        "EventPattern": {
+          "detail-type": [
+            "CloudWatch Alarm State Change",
+          ],
+          "source": [
+            "aws.cloudwatch",
+          ],
+        },
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": [
+                "CloudWatchAlarmDynamoDBHandlerFunction4184D83C",
+                "Arn",
+              ],
+            },
+            "Id": "Target0",
+          },
+        ],
+      },
+      "Type": "AWS::Events::Rule",
+    },
+    "DDBHandlerTriggerAllowEventRuleTestAlarmDashboardStackCloudWatchAlarmDynamoDBHandlerFunctionD6E7B60E8079F597": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "CloudWatchAlarmDynamoDBHandlerFunction4184D83C",
+            "Arn",
+          ],
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "DDBHandlerTrigger32DB9CB6",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "LocalDDBHandlerTrigger6EFEBA86": {
+      "Properties": {
+        "EventPattern": {
+          "detail-type": [
+            "CloudWatch Alarm State Change",
+          ],
+          "source": [
+            "aws.cloudwatch",
+          ],
+        },
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": [
+                "CloudWatchAlarmDynamoDBHandlerFunction4184D83C",
+                "Arn",
+              ],
+            },
+            "Id": "Target0",
+          },
+        ],
+      },
+      "Type": "AWS::Events::Rule",
+    },
+    "LocalDDBHandlerTriggerAllowEventRuleTestAlarmDashboardStackCloudWatchAlarmDynamoDBHandlerFunctionD6E7B60E4DFC0A08": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "CloudWatchAlarmDynamoDBHandlerFunction4184D83C",
+            "Arn",
+          ],
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "LocalDDBHandlerTrigger6EFEBA86",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "alarmCWCustomFunctionExecutionRole34A75FC8": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "id": "AwsSolutions-IAM5",
+              "reason": "Need alarmCWCustomFunctionExecutionRole to write to arbitrary log groups",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "alarmCWCustomFunction Handler Role",
+        "RoleName": "alarmCWCustomFunctionExecutionRole",
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "alarmCWCustomFunctionExecutionRoleDefaultPolicy49038102": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "id": "AwsSolutions-IAM5",
+              "reason": "Need alarmCWCustomFunctionExecutionRole to write to arbitrary log groups",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "ssm:GetParameter",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ssm:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":parameter/",
+                    {
+                      "Ref": "ConfigParameterD4506805",
+                    },
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:Query",
+                "dynamodb:BatchGetItem",
+                "dynamodb:DescribeTable",
+                "dynamodb:ConditionCheckItem",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CloudWatchAlarmDynamoDBTableBBA2ACBE",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CloudWatchAlarmDynamoDBTableBBA2ACBE",
+                          "Arn",
+                        ],
+                      },
+                      "/index/AlarmKeyIndex",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CloudWatchAlarmDynamoDBTableBBA2ACBE",
+                          "Arn",
+                        ],
+                      },
+                      "/index/StateValueIndex",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CloudWatchAlarmDynamoDBTableBBA2ACBE",
+                          "Arn",
+                        ],
+                      },
+                      "/index/SuppressionIndex",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CloudWatchAlarmDynamoDBTableBBA2ACBE",
+                          "Arn",
+                        ],
+                      },
+                      "/index/NonSuppressedAlarms",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "alarmCWCustomFunctionExecutionRoleDefaultPolicy49038102",
+        "Roles": [
+          {
+            "Ref": "alarmCWCustomFunctionExecutionRole34A75FC8",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "alarmListCWCustomFunctionRoleAED95124": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "id": "AwsSolutions-IAM5",
+              "reason": "Need alarmCWCustomFunctionExecutionRole to write to arbitrary log groups",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "alarmListCWCustomFunction Handler Role",
+        "RoleName": "alarmCListWCustomFunctionExecutionRole",
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "alarmListCWCustomFunctionRoleDefaultPolicyB65B0345": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "id": "AwsSolutions-IAM5",
+              "reason": "Need alarmCWCustomFunctionExecutionRole to write to arbitrary log groups",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:Query",
+                "dynamodb:BatchGetItem",
+                "dynamodb:DescribeTable",
+                "dynamodb:ConditionCheckItem",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CloudWatchAlarmDynamoDBTableBBA2ACBE",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CloudWatchAlarmDynamoDBTableBBA2ACBE",
+                          "Arn",
+                        ],
+                      },
+                      "/index/AlarmKeyIndex",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CloudWatchAlarmDynamoDBTableBBA2ACBE",
+                          "Arn",
+                        ],
+                      },
+                      "/index/StateValueIndex",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CloudWatchAlarmDynamoDBTableBBA2ACBE",
+                          "Arn",
+                        ],
+                      },
+                      "/index/SuppressionIndex",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CloudWatchAlarmDynamoDBTableBBA2ACBE",
+                          "Arn",
+                        ],
+                      },
+                      "/index/NonSuppressedAlarms",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "ssm:GetParameter",
+                "ssm:PutParameter",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ssm:",
+                    {
+                      "Ref": "AWS::Region",
+                    },
+                    ":",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":parameter/",
+                    {
+                      "Ref": "ConfigParameterD4506805",
+                    },
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "alarmListCWCustomFunctionRoleDefaultPolicyB65B0345",
+        "Roles": [
+          {
+            "Ref": "alarmListCWCustomFunctionRoleAED95124",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "configurationHandlerLambdaFunctionE7FBFD5C": {
+      "DependsOn": [
+        "CloudWatchAlarmConfigurationHandlerExecutionRoleDefaultPolicyE717A596",
+        "CloudWatchAlarmConfigurationHandlerExecutionRole1C7FF4EB",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-\${AWS::Region}",
+          },
+          "S3Key": "93c10683c6c71155a2927fe97f70b3ed76e1f7ea565e22bac156013899c61fa8.zip",
+        },
+        "FunctionName": "CloudWatchAlarmConfigurationHandlerCDK",
+        "Handler": "app.lambda_handler",
+        "MemorySize": 128,
+        "Role": {
+          "Fn::GetAtt": [
+            "CloudWatchAlarmConfigurationHandlerExecutionRole1C7FF4EB",
+            "Arn",
+          ],
+        },
+        "Runtime": "python3.11",
+        "Timeout": 60,
+        "TracingConfig": {
+          "Mode": "Active",
+        },
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;

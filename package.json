@@ -10,6 +10,7 @@
     "test": "jest",
     "cdk": "cdk",
     "collect": "ts-node src/collector/index.ts",
+    "ci": "npm run lint && npm run build && npm test",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write \"**/*.ts\""

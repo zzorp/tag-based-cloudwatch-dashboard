@@ -1,0 +1,21 @@
+{
+  "BaseName": "TestApp",
+  "ResourceFile": "../test/fixtures/sample-resources.json",
+  "TagKey": "environment",
+  "TagValues": ["production"],
+  "Regions": ["us-east-1"],
+  "GroupingTagKey": "",
+  "CustomEC2TagKeys": [],
+  "CustomNamespaceFile": "../test/fixtures/custom_namespaces.json",
+  "Compact": false,
+  "CompactMaxResourcesPerWidget": 10,
+  "AlarmTopic": "",
+  "AlarmDashboard": {
+    "enabled": false,
+    "organizationId": "",
+    "alarmViewListSize": 100
+  },
+  "MetricDashboards": {
+    "enabled": true
+  }
+}
