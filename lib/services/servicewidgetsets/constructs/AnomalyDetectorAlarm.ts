@@ -24,11 +24,9 @@ export interface AnomalyDetectorAlarmProps extends AlarmProps {
 
 
 export class AnomalyDetectorAlarm extends Alarm{
-    public alarm: IAlarm;
+    public anomalyAlarmRef: IAlarm;
     bandWidth = 2;
-    readonly alarmArn: string;
-    readonly alarmName: string;
-    readonly metric: IMetric;
+    declare readonly metric: IMetric;
 
     constructor(scope: Construct, id: string,props:AnomalyDetectorAlarmProps) {
         super(scope, id, props);
@@ -74,13 +72,11 @@ export class AnomalyDetectorAlarm extends Alarm{
 
         //console.log(anomalyAlarm)
 
-        this.alarm = Alarm.fromAlarmArn(this, `AnomalyAlarm_${id}`, anomalyAlarm.attrArn);
-        this.alarmArn = this.alarm.alarmArn;
-        this.alarmName = this.alarm.alarmName;
+        this.anomalyAlarmRef = Alarm.fromAlarmArn(this, `AnomalyAlarm_${id}`, anomalyAlarm.attrArn);
     }
 
     getAlarm():IAlarm {
-        return this.alarm;
+        return this.anomalyAlarmRef;
     }
 
 }
