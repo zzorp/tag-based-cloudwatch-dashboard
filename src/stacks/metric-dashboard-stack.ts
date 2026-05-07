@@ -3,12 +3,17 @@ import {Construct} from 'constructs'
 import {GraphFactory} from "../constructs/graph-factory";
 import {Dashboard} from "aws-cdk-lib/aws-cloudwatch";
 import {loadConfig} from "../../config/config.schema";
+import {AppConfig} from "../types/config";
 
-const config = loadConfig();
+export interface IemDashboardStackProps extends StackProps {
+  config?: AppConfig;
+}
 
 export class IemDashboardStack extends Stack {
-  constructor(scope: Construct, id: string, props?: StackProps) {
+  constructor(scope: Construct, id: string, props?: IemDashboardStackProps) {
     super(scope, id, props);
+
+    const config = props?.config ?? loadConfig();
 
     const dashboard = new Dashboard(this,config.BaseName,{
       dashboardName: config.BaseName + '-Dashboard'

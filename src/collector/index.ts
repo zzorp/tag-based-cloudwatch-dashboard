@@ -27,12 +27,12 @@ import { MediaLiveClient, ListChannelsCommand as MediaLiveListChannelsCommand, D
 import { AppSyncClient, GetGraphqlApiCommand } from '@aws-sdk/client-appsync';
 import { loadConfig } from '../../config/config.schema';
 
-interface ResourceTag {
+export interface ResourceTag {
   Key: string;
   Value: string;
 }
 
-interface TaggedResource {
+export interface TaggedResource {
   ResourceARN: string;
   Tags: ResourceTag[];
   [key: string]: any;
@@ -113,7 +113,7 @@ async function getAutoScalingGroups(tagName: string, tagValues: string[], region
   return resources;
 }
 
-async function router(resource: TaggedResource, region: string): Promise<TaggedResource> {
+export async function router(resource: TaggedResource, region: string): Promise<TaggedResource> {
   const arn = resource.ResourceARN;
 
   if (arn.includes(':apigateway:') && arn.includes('/restapis/') && !arn.includes('stages')) {
@@ -534,6 +534,7 @@ async function handler() {
 
   const decoratedResources: TaggedResource[] = [];
   const regionNamespaces: { RegionNamespaces: Array<{ Region: string; Namespaces: string[] }> } = { RegionNamespaces: [] };
+  const failures: Array<{ arn: string; error: unknown }> = [];
 
   for (const region of regions) {
     console.log(`Processing region: ${region}`);
@@ -547,9 +548,19 @@ async function handler() {
         decoratedResources.push(decorated);
       } catch (e) {
         console.error(`Error decorating resource ${resource.ResourceARN}:`, e);
-        decoratedResources.push(resource);
+        failures.push({ arn: resource.ResourceARN, error: e });
       }
     }
+  }
+
+  if (failures.length > 0) {
+    console.error(`\n--- Decoration Failures Summary ---`);
+    console.error(`${failures.length} resource(s) failed decoration:`);
+    for (const f of failures) {
+      console.error(`  - ${f.arn}`);
+    }
+    console.error(`Aborting: failed resources would produce incomplete data that breaks synthesis.`);
+    process.exit(1);
   }
 
   const outputPath = path.resolve(__dirname, '../../', outputFile);
@@ -564,7 +575,10 @@ async function handler() {
   console.log(`Wrote custom namespaces to ${namespacePath}`);
 }
 
-handler().catch((err) => {
-  console.error('Resource collection failed:', err);
-  process.exit(1);
-});
+/* istanbul ignore next */
+if (require.main === module) {
+  handler().catch((err) => {
+    console.error('Resource collection failed:', err);
+    process.exit(1);
+  });
+}

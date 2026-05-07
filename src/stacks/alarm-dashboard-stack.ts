@@ -10,14 +10,18 @@ import {StringParameter} from "aws-cdk-lib/aws-ssm";
 import {CustomWidget, Dashboard} from "aws-cdk-lib/aws-cloudwatch";
 import {NagSuppressions} from "cdk-nag";
 import {loadConfig} from "../../config/config.schema";
+import {AppConfig} from "../types/config";
 
-
-const config = loadConfig();
+export interface AlarmDashboardStackProps extends cdk.StackProps {
+  config?: AppConfig;
+}
 
 export class AlarmDashboardStack extends cdk.Stack {
 
-    constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+    constructor(scope: Construct, id: string, props?: AlarmDashboardStackProps) {
         super(scope, id, props);
+
+        const config = props?.config ?? loadConfig();
         console.log(config['AlarmDashboard']['organizationId']);
         let parameterConfig:any = {};
 

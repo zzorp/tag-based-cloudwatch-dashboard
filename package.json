@@ -16,6 +16,21 @@
     "format": "prettier --write \"**/*.ts\""
   },
   "devDependencies": {
+    "@types/jest": "^29.0.0",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "aws-cdk": "^2.170.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.1.0",
+    "jest": "^29.0.0",
+    "prettier": "^3.2.0",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.0.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
     "@aws-sdk/client-api-gateway": "^3.500.0",
     "@aws-sdk/client-apigatewayv2": "^3.500.0",
     "@aws-sdk/client-appsync": "^3.500.0",
@@ -36,21 +51,6 @@
     "@aws-sdk/client-s3": "^3.500.0",
     "@aws-sdk/client-sns": "^3.500.0",
     "@aws-sdk/client-sqs": "^3.500.0",
-    "@types/jest": "^29.0.0",
-    "@types/node": "^20.0.0",
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
-    "aws-cdk": "^2.170.0",
-    "eslint": "^8.57.0",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-prettier": "^5.1.0",
-    "jest": "^29.0.0",
-    "prettier": "^3.2.0",
-    "ts-jest": "^29.1.0",
-    "ts-node": "^10.0.0",
-    "typescript": "^5.4.0"
-  },
-  "dependencies": {
     "aws-cdk-lib": "^2.170.0",
     "cdk-nag": "^2.27.166",
     "constructs": "^10.0.0",
