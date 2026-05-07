@@ -1,18 +1,26 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { ResourceGroupsTaggingAPIClient, GetResourcesCommand } from '@aws-sdk/client-resource-groups-tagging-api';
+import { AutoScalingClient, DescribeAutoScalingGroupsCommand } from '@aws-sdk/client-auto-scaling';
 import {
-  ResourceGroupsTaggingAPIClient,
-  GetResourcesCommand,
-} from '@aws-sdk/client-resource-groups-tagging-api';
-import {
-  AutoScalingClient,
-  DescribeAutoScalingGroupsCommand,
-} from '@aws-sdk/client-auto-scaling';
-import { EC2Client, DescribeVolumesCommand, DescribeInstancesCommand, DescribeInstanceCreditSpecificationsCommand, DescribeTransitGatewayAttachmentsCommand } from '@aws-sdk/client-ec2';
+  EC2Client,
+  DescribeVolumesCommand,
+  DescribeInstancesCommand,
+  DescribeInstanceCreditSpecificationsCommand,
+  DescribeTransitGatewayAttachmentsCommand,
+} from '@aws-sdk/client-ec2';
 import { LambdaClient, GetFunctionCommand } from '@aws-sdk/client-lambda';
 import { ECSClient, DescribeClustersCommand, ListServicesCommand, DescribeServicesCommand } from '@aws-sdk/client-ecs';
-import { ElasticLoadBalancingV2Client, DescribeLoadBalancersCommand as DescribeLoadBalancersV2Command, DescribeTargetGroupsCommand, DescribeTargetHealthCommand } from '@aws-sdk/client-elastic-load-balancing-v2';
-import { ElasticLoadBalancingClient, DescribeLoadBalancersCommand as DescribeLoadBalancersV1Command } from '@aws-sdk/client-elastic-load-balancing';
+import {
+  ElasticLoadBalancingV2Client,
+  DescribeLoadBalancersCommand as DescribeLoadBalancersV2Command,
+  DescribeTargetGroupsCommand,
+  DescribeTargetHealthCommand,
+} from '@aws-sdk/client-elastic-load-balancing-v2';
+import {
+  ElasticLoadBalancingClient,
+  DescribeLoadBalancersCommand as DescribeLoadBalancersV1Command,
+} from '@aws-sdk/client-elastic-load-balancing';
 import { RDSClient, DescribeDBClustersCommand } from '@aws-sdk/client-rds';
 import { DynamoDBClient, DescribeTableCommand } from '@aws-sdk/client-dynamodb';
 import { APIGatewayClient, GetRestApiCommand, GetStagesCommand } from '@aws-sdk/client-api-gateway';
@@ -22,8 +30,17 @@ import { SQSClient, GetQueueUrlCommand, GetQueueAttributesCommand } from '@aws-s
 import { EFSClient, DescribeFileSystemsCommand } from '@aws-sdk/client-efs';
 import { CloudWatchClient, ListMetricsCommand } from '@aws-sdk/client-cloudwatch';
 import { S3Client, GetBucketEncryptionCommand, GetBucketLocationCommand } from '@aws-sdk/client-s3';
-import { MediaPackageClient, ListChannelsCommand, DescribeChannelCommand, ListOriginEndpointsCommand } from '@aws-sdk/client-mediapackage';
-import { MediaLiveClient, ListChannelsCommand as MediaLiveListChannelsCommand, DescribeChannelCommand as MediaLiveDescribeChannelCommand } from '@aws-sdk/client-medialive';
+import {
+  MediaPackageClient,
+  ListChannelsCommand,
+  DescribeChannelCommand,
+  ListOriginEndpointsCommand,
+} from '@aws-sdk/client-mediapackage';
+import {
+  MediaLiveClient,
+  ListChannelsCommand as MediaLiveListChannelsCommand,
+  DescribeChannelCommand as MediaLiveDescribeChannelCommand,
+} from '@aws-sdk/client-medialive';
 import { AppSyncClient, GetGraphqlApiCommand } from '@aws-sdk/client-appsync';
 import { loadConfig } from '../../config/config.schema';
 
@@ -65,7 +82,7 @@ async function getResources(tagName: string, tagValues: string[], region: string
         for (const r of response.ResourceTagMappingList) {
           resources.push({
             ResourceARN: r.ResourceARN || '',
-            Tags: (r.Tags || []).map(t => ({ Key: t.Key || '', Value: t.Value || '' })),
+            Tags: (r.Tags || []).map((t) => ({ Key: t.Key || '', Value: t.Value || '' })),
           });
         }
       }
@@ -101,7 +118,7 @@ async function getAutoScalingGroups(tagName: string, tagValues: string[], region
           const resource: TaggedResource = {
             ...asg,
             ResourceARN: asg.AutoScalingGroupARN || '',
-            Tags: (asg.Tags || []).map(t => ({ Key: t.Key || '', Value: t.Value || '' })),
+            Tags: (asg.Tags || []).map((t) => ({ Key: t.Key || '', Value: t.Value || '' })),
           } as any;
           resources.push(resource);
         }
@@ -134,9 +151,19 @@ export async function router(resource: TaggedResource, region: string): Promise<
     return ec2Decorator(resource, region);
   } else if (arn.includes('lambda') && arn.includes('function')) {
     return lambdaDecorator(resource, region);
-  } else if (arn.includes('elasticloadbalancing') && !arn.includes('/net/') && !arn.includes('/app/') && !arn.includes(':targetgroup/')) {
+  } else if (
+    arn.includes('elasticloadbalancing') &&
+    !arn.includes('/net/') &&
+    !arn.includes('/app/') &&
+    !arn.includes(':targetgroup/')
+  ) {
     return elb1Decorator(resource, region);
-  } else if (arn.includes('elasticloadbalancing') && (arn.includes('/net/') || arn.includes('/app/')) && !arn.includes(':targetgroup/') && !arn.includes(':listener/')) {
+  } else if (
+    arn.includes('elasticloadbalancing') &&
+    (arn.includes('/net/') || arn.includes('/app/')) &&
+    !arn.includes(':targetgroup/') &&
+    !arn.includes(':listener/')
+  ) {
     return elb2Decorator(resource, region);
   } else if (arn.includes(':ecs:') && arn.includes(':cluster/')) {
     return ecsDecorator(resource, region);
@@ -257,11 +284,13 @@ async function ec2Decorator(resource: TaggedResource, region: string): Promise<T
   const volumes: any[] = [];
   let nextToken: string | undefined;
   do {
-    const volResponse = await ec2.send(new DescribeVolumesCommand({
-      Filters: [{ Name: 'attachment.instance-id', Values: [instanceid] }],
-      MaxResults: 100,
-      NextToken: nextToken,
-    }));
+    const volResponse = await ec2.send(
+      new DescribeVolumesCommand({
+        Filters: [{ Name: 'attachment.instance-id', Values: [instanceid] }],
+        MaxResults: 100,
+        NextToken: nextToken,
+      }),
+    );
     if (volResponse.Volumes) {
       volumes.push(...volResponse.Volumes);
     }
@@ -270,28 +299,34 @@ async function ec2Decorator(resource: TaggedResource, region: string): Promise<T
   resource['Volumes'] = volumes;
 
   // Get instance details
-  const instResponse = await ec2.send(new DescribeInstancesCommand({
-    Filters: [{ Name: 'instance-id', Values: [instanceid] }],
-  }));
+  const instResponse = await ec2.send(
+    new DescribeInstancesCommand({
+      Filters: [{ Name: 'instance-id', Values: [instanceid] }],
+    }),
+  );
   resource['Instance'] = instResponse.Reservations?.[0]?.Instances?.[0] || {};
   const instanceType = resource['Instance'].InstanceType || '';
 
   // Check for burstable instance types
   if (instanceType.includes('t2') || instanceType.includes('t3') || instanceType.includes('t4')) {
-    const creditResponse = await ec2.send(new DescribeInstanceCreditSpecificationsCommand({
-      InstanceIds: [instanceid],
-    }));
+    const creditResponse = await ec2.send(
+      new DescribeInstanceCreditSpecificationsCommand({
+        InstanceIds: [instanceid],
+      }),
+    );
     resource['CPUCreditSpecs'] = creditResponse.InstanceCreditSpecifications?.[0] || {};
   }
 
   // Check for CWAgent metrics
   const cw = new CloudWatchClient(getClientConfig(region));
-  const metricsResponse = await cw.send(new ListMetricsCommand({
-    MetricName: 'mem_used_percent',
-    Namespace: 'CWAgent',
-    Dimensions: [{ Name: 'InstanceId', Value: instanceid }],
-  }));
-  resource['CWAgent'] = (metricsResponse.Metrics && metricsResponse.Metrics.length > 0) ? 'True' : 'False';
+  const metricsResponse = await cw.send(
+    new ListMetricsCommand({
+      MetricName: 'mem_used_percent',
+      Namespace: 'CWAgent',
+      Dimensions: [{ Name: 'InstanceId', Value: instanceid }],
+    }),
+  );
+  resource['CWAgent'] = metricsResponse.Metrics && metricsResponse.Metrics.length > 0 ? 'True' : 'False';
 
   return resource;
 }
@@ -311,9 +346,11 @@ async function elb1Decorator(resource: TaggedResource, region: string): Promise<
   const elbname = resource.ResourceARN.split('/').pop()!;
   const client = new ElasticLoadBalancingClient(getClientConfig(region));
 
-  const response = await client.send(new DescribeLoadBalancersV1Command({
-    LoadBalancerNames: [elbname],
-  }));
+  const response = await client.send(
+    new DescribeLoadBalancersV1Command({
+      LoadBalancerNames: [elbname],
+    }),
+  );
   resource['Extras'] = response.LoadBalancerDescriptions?.[0] || {};
   return resource;
 }
@@ -322,14 +359,18 @@ async function elb2Decorator(resource: TaggedResource, region: string): Promise<
   console.log(`This resource is ELBv2 ${resource.ResourceARN}`);
   const client = new ElasticLoadBalancingV2Client(getClientConfig(region));
 
-  const response = await client.send(new DescribeLoadBalancersV2Command({
-    LoadBalancerArns: [resource.ResourceARN],
-  }));
+  const response = await client.send(
+    new DescribeLoadBalancersV2Command({
+      LoadBalancerArns: [resource.ResourceARN],
+    }),
+  );
   resource['Extras'] = response.LoadBalancers?.[0] || {};
 
-  const tgResponse = await client.send(new DescribeTargetGroupsCommand({
-    LoadBalancerArn: resource.ResourceARN,
-  }));
+  const tgResponse = await client.send(
+    new DescribeTargetGroupsCommand({
+      LoadBalancerArn: resource.ResourceARN,
+    }),
+  );
   resource['TargetGroups'] = tgResponse.TargetGroups || [];
   return resource;
 }
@@ -338,20 +379,26 @@ async function ecsDecorator(resource: TaggedResource, region: string): Promise<T
   console.log(`This resource is ECS ${resource.ResourceARN}`);
   const ecsClient = new ECSClient(getClientConfig(region));
 
-  const clusterResponse = await ecsClient.send(new DescribeClustersCommand({
-    clusters: [resource.ResourceARN],
-  }));
+  const clusterResponse = await ecsClient.send(
+    new DescribeClustersCommand({
+      clusters: [resource.ResourceARN],
+    }),
+  );
   resource['cluster'] = clusterResponse.clusters?.[0] || {};
 
-  const listResponse = await ecsClient.send(new ListServicesCommand({
-    cluster: resource.ResourceARN,
-  }));
+  const listResponse = await ecsClient.send(
+    new ListServicesCommand({
+      cluster: resource.ResourceARN,
+    }),
+  );
 
   if (listResponse.serviceArns && listResponse.serviceArns.length > 0) {
-    const svcResponse = await ecsClient.send(new DescribeServicesCommand({
-      cluster: resource.ResourceARN,
-      services: listResponse.serviceArns,
-    }));
+    const svcResponse = await ecsClient.send(
+      new DescribeServicesCommand({
+        cluster: resource.ResourceARN,
+        services: listResponse.serviceArns,
+      }),
+    );
 
     const services = (svcResponse.services || []).map((service: any) => {
       delete service.events;
@@ -370,9 +417,11 @@ async function ecsDecorator(resource: TaggedResource, region: string): Promise<T
       }
 
       for (const tgArn of targetGroups) {
-        const healthResponse = await elbClient.send(new DescribeTargetHealthCommand({
-          TargetGroupArn: tgArn,
-        }));
+        const healthResponse = await elbClient.send(
+          new DescribeTargetHealthCommand({
+            TargetGroupArn: tgArn,
+          }),
+        );
         for (const desc of healthResponse.TargetHealthDescriptions || []) {
           if (desc.Target?.Id) instances.push(desc.Target.Id);
         }
@@ -393,9 +442,11 @@ async function tgwDecorator(resource: TaggedResource, region: string): Promise<T
   const tgwid = resource.ResourceARN.split('/').pop()!;
   const client = new EC2Client(getClientConfig(region));
 
-  const response = await client.send(new DescribeTransitGatewayAttachmentsCommand({
-    Filters: [{ Name: 'transit-gateway-id', Values: [tgwid] }],
-  }));
+  const response = await client.send(
+    new DescribeTransitGatewayAttachmentsCommand({
+      Filters: [{ Name: 'transit-gateway-id', Values: [tgwid] }],
+    }),
+  );
   resource['attachments'] = response.TransitGatewayAttachments || [];
   return resource;
 }
@@ -406,10 +457,12 @@ async function sqsDecorator(resource: TaggedResource, region: string): Promise<T
   const client = new SQSClient(getClientConfig(region));
 
   const urlResponse = await client.send(new GetQueueUrlCommand({ QueueName: queueName }));
-  const attrResponse = await client.send(new GetQueueAttributesCommand({
-    AttributeNames: ['All'],
-    QueueUrl: urlResponse.QueueUrl!,
-  }));
+  const attrResponse = await client.send(
+    new GetQueueAttributesCommand({
+      AttributeNames: ['All'],
+      QueueUrl: urlResponse.QueueUrl!,
+    }),
+  );
   resource['Attributes'] = attrResponse.Attributes || {};
   return resource;
 }
@@ -533,7 +586,9 @@ async function handler() {
   }
 
   const decoratedResources: TaggedResource[] = [];
-  const regionNamespaces: { RegionNamespaces: Array<{ Region: string; Namespaces: string[] }> } = { RegionNamespaces: [] };
+  const regionNamespaces: { RegionNamespaces: Array<{ Region: string; Namespaces: string[] }> } = {
+    RegionNamespaces: [],
+  };
   const failures: Array<{ arn: string; error: unknown }> = [];
 
   for (const region of regions) {

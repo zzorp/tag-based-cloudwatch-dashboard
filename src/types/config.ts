@@ -22,7 +22,11 @@ export const ConfigSchema = z.object({
   Compact: z.boolean(),
   CompactMaxResourcesPerWidget: z.number(),
   AlarmTopic: z.string().optional().default(''),
-  AlarmDashboard: AlarmDashboardSchema.optional().default({ enabled: false, organizationId: '', alarmViewListSize: 100 }),
+  AlarmDashboard: AlarmDashboardSchema.optional().default({
+    enabled: false,
+    organizationId: '',
+    alarmViewListSize: 100,
+  }),
   MetricDashboards: MetricDashboardsSchema.optional().default({ enabled: true }),
 });
 

@@ -19,12 +19,12 @@ jest.mock('@aws-sdk/client-mediapackage');
 jest.mock('@aws-sdk/client-medialive');
 jest.mock('@aws-sdk/client-appsync');
 
-import { LambdaClient, GetFunctionCommand } from '@aws-sdk/client-lambda';
-import { DynamoDBClient, DescribeTableCommand } from '@aws-sdk/client-dynamodb';
-import { RDSClient, DescribeDBClustersCommand } from '@aws-sdk/client-rds';
-import { EFSClient, DescribeFileSystemsCommand } from '@aws-sdk/client-efs';
-import { EC2Client, DescribeVolumesCommand, DescribeInstancesCommand, DescribeInstanceCreditSpecificationsCommand } from '@aws-sdk/client-ec2';
-import { CloudWatchClient, ListMetricsCommand } from '@aws-sdk/client-cloudwatch';
+import { LambdaClient } from '@aws-sdk/client-lambda';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { RDSClient } from '@aws-sdk/client-rds';
+import { EFSClient } from '@aws-sdk/client-efs';
+import { EC2Client } from '@aws-sdk/client-ec2';
+import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import { router, TaggedResource } from '../../src/collector/index';
 
 // Helper to set up mocked send function for a client

@@ -1,474 +1,447 @@
 import * as cdk from 'aws-cdk-lib';
-import {Aws, CfnOutput, Duration, RemovalPolicy, Tags} from 'aws-cdk-lib';
-import {Construct} from 'constructs';
-import {EventBus, EventBusPolicy, Rule} from "aws-cdk-lib/aws-events";
-import {Effect, PolicyStatement, Role, ServicePrincipal, StarPrincipal} from "aws-cdk-lib/aws-iam";
-import {AttributeType, BillingMode, ProjectionType, Table} from "aws-cdk-lib/aws-dynamodb";
-import {Architecture, Code, Function, Runtime, Tracing} from "aws-cdk-lib/aws-lambda";
-import {LambdaFunction} from 'aws-cdk-lib/aws-events-targets';
-import {StringParameter} from "aws-cdk-lib/aws-ssm";
-import {CustomWidget, Dashboard} from "aws-cdk-lib/aws-cloudwatch";
-import {NagSuppressions} from "cdk-nag";
-import {loadConfig} from "../../config/config.schema";
-import {AppConfig} from "../types/config";
+import { Aws, CfnOutput, Duration, RemovalPolicy, Tags } from 'aws-cdk-lib';
+import { Construct } from 'constructs';
+import { EventBus, EventBusPolicy, Rule } from 'aws-cdk-lib/aws-events';
+import { Effect, PolicyStatement, Role, ServicePrincipal, StarPrincipal } from 'aws-cdk-lib/aws-iam';
+import { AttributeType, BillingMode, ProjectionType, Table } from 'aws-cdk-lib/aws-dynamodb';
+import { Architecture, Code, Function, Runtime, Tracing } from 'aws-cdk-lib/aws-lambda';
+import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
+import { StringParameter } from 'aws-cdk-lib/aws-ssm';
+import { CustomWidget, Dashboard } from 'aws-cdk-lib/aws-cloudwatch';
+import { NagSuppressions } from 'cdk-nag';
+import { loadConfig } from '../../config/config.schema';
+import { AppConfig } from '../types/config';
 
 export interface AlarmDashboardStackProps extends cdk.StackProps {
   config?: AppConfig;
 }
 
 export class AlarmDashboardStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props?: AlarmDashboardStackProps) {
+    super(scope, id, props);
 
-    constructor(scope: Construct, id: string, props?: AlarmDashboardStackProps) {
-        super(scope, id, props);
+    const config = props?.config ?? loadConfig();
+    console.log(config['AlarmDashboard']['organizationId']);
+    const parameterConfig: any = {};
 
-        const config = props?.config ?? loadConfig();
-        console.log(config['AlarmDashboard']['organizationId']);
-        let parameterConfig:any = {};
+    // Create the custom EventBus
+    const cloudwatchEventBus = new EventBus(this, 'CloudWatchEventBus', {
+      eventBusName: 'CWAlarmEventBusCDK',
+    });
 
-        // Create the custom EventBus
-        const cloudwatchEventBus = new EventBus(this,'CloudWatchEventBus', {
-            eventBusName: 'CWAlarmEventBusCDK'
-        });
+    // Create the resource policy
+    const busResourcePolicy = new PolicyStatement({
+      sid: 'AllowPutFromAllOrg',
+      effect: Effect.ALLOW,
+      principals: [new StarPrincipal()],
+      actions: ['events:PutEvents'],
+      resources: [cloudwatchEventBus.eventBusArn],
+      conditions: {
+        StringEquals: {
+          'aws:PrincipalOrgId': config['AlarmDashboard']['organizationId'],
+        },
+      },
+    });
 
-        // Create the resource policy
-        const busResourcePolicy = new PolicyStatement({
-            sid: 'AllowPutFromAllOrg',
-            effect: Effect.ALLOW,
-            principals: [new StarPrincipal()],
-            actions: [
-                'events:PutEvents'
-            ],
-            resources: [
-                cloudwatchEventBus.eventBusArn
-            ],
-            conditions: {
-                StringEquals: {
-                    'aws:PrincipalOrgId': config['AlarmDashboard']['organizationId']
-                }
-            }
-        });
+    // Attach the policy to the custom EventBus
+    new EventBusPolicy(this, 'CloudWatchEventBusPolicy', {
+      eventBus: cloudwatchEventBus,
+      statementId: 'AllowPutFromAllOrg',
+      statement: busResourcePolicy.toStatementJson(),
+    });
 
-        // Attach the policy to the custom EventBus
-        new EventBusPolicy(this,'CloudWatchEventBusPolicy',{
-            eventBus: cloudwatchEventBus,
-            statementId: 'AllowPutFromAllOrg',
-            statement: busResourcePolicy.toStatementJson(),
-        });
+    // Create DynamoDB table for alarms
+    const dynamoTable = new Table(this, 'CloudWatchAlarmDynamoDBTable', {
+      tableName: 'AlarmStateChangeTableCDK',
+      partitionKey: { name: 'alarmKey', type: AttributeType.STRING },
+      removalPolicy: RemovalPolicy.DESTROY,
+      billingMode: BillingMode.PAY_PER_REQUEST,
+    });
 
-        // Create DynamoDB table for alarms
-        const dynamoTable = new Table(this, 'CloudWatchAlarmDynamoDBTable', {
-            tableName: 'AlarmStateChangeTableCDK',
-            partitionKey: { name: 'alarmKey', type: AttributeType.STRING },
-            removalPolicy: RemovalPolicy.DESTROY,
-            billingMode: BillingMode.PAY_PER_REQUEST
-        });
+    parameterConfig['dynamoTableARN'] = dynamoTable.tableArn;
+    parameterConfig['dynamoTableName'] = dynamoTable.tableName;
+    parameterConfig['eventBusARN'] = cloudwatchEventBus.eventBusArn;
 
-        parameterConfig['dynamoTableARN'] = dynamoTable.tableArn;
-        parameterConfig['dynamoTableName'] = dynamoTable.tableName;
-        parameterConfig['eventBusARN'] = cloudwatchEventBus.eventBusArn;
+    Tags.of(dynamoTable).add('auto-delete', 'never');
 
-        Tags.of(dynamoTable).add('auto-delete','never');
+    // DynamoDB Table GSIs
+    dynamoTable.addGlobalSecondaryIndex({
+      indexName: 'AlarmKeyIndex',
+      partitionKey: { name: 'alarmKey', type: AttributeType.STRING },
+      projectionType: ProjectionType.ALL,
+    });
 
-        // DynamoDB Table GSIs
-        dynamoTable.addGlobalSecondaryIndex({
-            indexName: 'AlarmKeyIndex',
-            partitionKey: { name: 'alarmKey', type: AttributeType.STRING },
-            projectionType: ProjectionType.ALL
-        });
+    dynamoTable.addGlobalSecondaryIndex({
+      indexName: 'StateValueIndex',
+      partitionKey: { name: 'stateValue', type: AttributeType.STRING },
+      projectionType: ProjectionType.ALL,
+    });
 
-        dynamoTable.addGlobalSecondaryIndex({
-            indexName: 'StateValueIndex',
-            partitionKey: { name: 'stateValue', type: AttributeType.STRING},
-            projectionType: ProjectionType.ALL
-        });
+    dynamoTable.addGlobalSecondaryIndex({
+      indexName: 'SuppressionIndex',
+      partitionKey: { name: 'suppressed', type: AttributeType.NUMBER },
+      projectionType: ProjectionType.ALL,
+    });
 
-        dynamoTable.addGlobalSecondaryIndex({
-            indexName: 'SuppressionIndex',
-            partitionKey: { name: 'suppressed', type: AttributeType.NUMBER},
-            projectionType: ProjectionType.ALL
-        });
+    dynamoTable.addGlobalSecondaryIndex({
+      indexName: 'NonSuppressedAlarms',
+      partitionKey: { name: 'stateValue', type: AttributeType.STRING },
+      sortKey: { name: 'suppressed', type: AttributeType.NUMBER },
+      projectionType: ProjectionType.ALL,
+    });
+    // END DynamoDB
 
-        dynamoTable.addGlobalSecondaryIndex({
-            indexName: 'NonSuppressedAlarms',
-            partitionKey: { name: 'stateValue', type: AttributeType.STRING},
-            sortKey: { name: 'suppressed', type: AttributeType.NUMBER},
-            projectionType: ProjectionType.ALL
-        });
-        // END DynamoDB
+    //Lambda function for handling the events
+    const ddbHandlerLambdaRole = new Role(this, 'CloudWatchAlarmDynamoDBHandlerExecutionRole', {
+      description: 'CloudWatchAlarmDynamoDB Handler Role',
+      assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
+      roleName: 'CloudWatchAlarmDynamoDBHandlerExecutionRole',
+    });
 
+    const ddbHandlerLambdaFunction = new Function(this, 'CloudWatchAlarmDynamoDBHandlerFunction', {
+      runtime: Runtime.PYTHON_3_11,
+      handler: 'app.lambda_handler',
+      code: Code.fromAsset('functions/cwalarmdbhandler/'),
+      functionName: 'CloudWatchAlarmDynamoDBHandlerCDK',
+      timeout: Duration.seconds(60),
+      memorySize: 256,
+      tracing: Tracing.ACTIVE,
+      role: ddbHandlerLambdaRole,
+    });
 
-        //Lambda function for handling the events
-        const ddbHandlerLambdaRole = new Role(this, 'CloudWatchAlarmDynamoDBHandlerExecutionRole',{
-            description: 'CloudWatchAlarmDynamoDB Handler Role',
-            assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
-            roleName:'CloudWatchAlarmDynamoDBHandlerExecutionRole'
-        });
+    //Adding policy to the lambda execution role
+    ddbHandlerLambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
+        resources: ['*'],
+      }),
+    );
 
-        const ddbHandlerLambdaFunction = new Function(this, 'CloudWatchAlarmDynamoDBHandlerFunction', {
-            runtime: Runtime.PYTHON_3_11,
-            handler: 'app.lambda_handler',
-            code: Code.fromAsset('functions/cwalarmdbhandler/'),
-            functionName: 'CloudWatchAlarmDynamoDBHandlerCDK',
-            timeout: Duration.seconds(60),
-            memorySize: 256,
-            tracing: Tracing.ACTIVE,
-            role: ddbHandlerLambdaRole
-        });
+    ddbHandlerLambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['dynamodb:PutItem', 'dynamodb:GetItem', 'dynamodb:UpdateItem', 'dynamodb:GetRecords'],
+        resources: [dynamoTable.tableArn],
+      }),
+    );
 
-        //Adding policy to the lambda execution role
-        ddbHandlerLambdaFunction.addToRolePolicy(
-            new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: [
-                    "logs:CreateLogGroup",
-                    "logs:CreateLogStream",
-                    "logs:PutLogEvents"
-                ],
-                resources: ["*"]
-            })
-        );
+    //Adding policy to the lambda execution role
+    ddbHandlerLambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'organizations:DescribeAccount',
+          'organizations:ListAccounts',
+          'account:GetAlternateContact',
+          'account:GetContactInformation',
+          'account:ListRegions',
+        ],
+        resources: ['*'],
+      }),
+    );
 
-        ddbHandlerLambdaFunction.addToRolePolicy(
-            new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: [
-                    'dynamodb:PutItem',
-                    'dynamodb:GetItem',
-                    'dynamodb:UpdateItem',
-                    'dynamodb:GetRecords',
-                ],
-                resources: [dynamoTable.tableArn],
-            })
-        );
+    ddbHandlerLambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['sts:AssumeRole'],
+        resources: ['arn:aws:iam::*:role/CrossAccountAlarmAugmentationAssumeRole-*'],
+      }),
+    );
 
-        //Adding policy to the lambda execution role
-        ddbHandlerLambdaFunction.addToRolePolicy(
-            new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: [
-                    'organizations:DescribeAccount',
-                    'organizations:ListAccounts',
-                    'account:GetAlternateContact',
-                    'account:GetContactInformation',
-                    'account:ListRegions',
-                ],
-                resources: ['*'],
-            })
-        );
+    ddbHandlerLambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ec2:DescribeInstances'],
+        resources: ['*'],
+      }),
+    );
 
-        ddbHandlerLambdaFunction.addToRolePolicy(
-            new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: [
-                    'sts:AssumeRole'
-                ],
-                resources:['arn:aws:iam::*:role/CrossAccountAlarmAugmentationAssumeRole-*']
-            })
-        );
+    ddbHandlerLambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['cloudwatch:ListTagsForResource'],
+        resources: ['*'],
+      }),
+    );
 
-        ddbHandlerLambdaFunction.addToRolePolicy(
-            new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: [
-                    'ec2:DescribeInstances'
-                ],
-                resources:['*']
-            })
-        );
+    const configurationHandlerLambdaRole = new Role(this, 'CloudWatchAlarmConfigurationHandlerExecutionRole', {
+      description: 'CloudWatchAlarm Configuration Handler Role',
+      assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
+      roleName: 'CloudWatchAlarmConfigurationHandlerExecutionRole',
+    });
 
-        ddbHandlerLambdaFunction.addToRolePolicy(
-            new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: [
-                    'cloudwatch:ListTagsForResource'
-                ],
-                resources: ['*']
-            })
-        );
+    const configurationHandlerLambdaFunction = new Function(this, 'configurationHandlerLambdaFunction', {
+      runtime: Runtime.PYTHON_3_11,
+      handler: 'app.lambda_handler',
+      code: Code.fromAsset('functions/configuration_handler/'),
+      functionName: 'CloudWatchAlarmConfigurationHandlerCDK',
+      timeout: Duration.seconds(60),
+      memorySize: 128,
+      tracing: Tracing.ACTIVE,
+      role: configurationHandlerLambdaRole,
+    });
 
-        const configurationHandlerLambdaRole = new Role(this, 'CloudWatchAlarmConfigurationHandlerExecutionRole',{
-            description: 'CloudWatchAlarm Configuration Handler Role',
-            assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
-            roleName:'CloudWatchAlarmConfigurationHandlerExecutionRole'
-        });
+    configurationHandlerLambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
+        resources: ['*'],
+      }),
+    );
 
-        const configurationHandlerLambdaFunction = new Function(this, 'configurationHandlerLambdaFunction', {
-            runtime: Runtime.PYTHON_3_11,
-            handler: 'app.lambda_handler',
-            code: Code.fromAsset('functions/configuration_handler/'),
-            functionName: 'CloudWatchAlarmConfigurationHandlerCDK',
-            timeout: Duration.seconds(60),
-            memorySize: 128,
-            tracing: Tracing.ACTIVE,
-            role: configurationHandlerLambdaRole
-        });
+    configurationHandlerLambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['dynamodb:UpdateItem'],
+        resources: [dynamoTable.tableArn],
+      }),
+    );
 
-        configurationHandlerLambdaFunction.addToRolePolicy(
-            new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: [
-                    "logs:CreateLogGroup",
-                    "logs:CreateLogStream",
-                    "logs:PutLogEvents"
-                ],
-                resources: ["*"]
-            })
-        );
+    // EventBus rule as Lambda function trigger (one on the custom eventbus and one on the default eventbus)
+    new Rule(this, 'DDBHandlerTrigger', {
+      eventBus: cloudwatchEventBus,
+      eventPattern: {
+        source: ['aws.cloudwatch'],
+        detailType: ['CloudWatch Alarm State Change'],
+      },
+      targets: [new LambdaFunction(ddbHandlerLambdaFunction)],
+    });
 
-        configurationHandlerLambdaFunction.addToRolePolicy(
-            new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: [
-                    'dynamodb:UpdateItem'
-                ],
-                resources: [dynamoTable.tableArn]
-            })
-        );
+    new Rule(this, 'LocalDDBHandlerTrigger', {
+      eventPattern: {
+        source: ['aws.cloudwatch'],
+        detailType: ['CloudWatch Alarm State Change'],
+      },
+      targets: [new LambdaFunction(ddbHandlerLambdaFunction)],
+    });
 
+    // Dashboard infrastructure
 
+    parameterConfig['compact'] = 0;
+    parameterConfig['configuratorLambdaFunction'] = configurationHandlerLambdaFunction.functionArn;
+    parameterConfig['alarmViewListSize'] = config.AlarmDashboard.alarmViewListSize
+      ? config.AlarmDashboard.alarmViewListSize
+      : 100;
 
-        // EventBus rule as Lambda function trigger (one on the custom eventbus and one on the default eventbus)
-        new Rule(this, 'DDBHandlerTrigger', {
-            eventBus: cloudwatchEventBus,
-            eventPattern: {
-                source: ['aws.cloudwatch'],
-                detailType: ['CloudWatch Alarm State Change'],
-            },
-            targets: [new LambdaFunction(ddbHandlerLambdaFunction)],
-        });
+    const configParameter = new StringParameter(this, 'ConfigParameter', {
+      stringValue: JSON.stringify(parameterConfig),
+      parameterName: 'CloudWatchAlarmWidgetConfigCDK',
+      description: 'Config for CloudWatch Alarm Widgets',
+    });
 
-        new Rule(this, 'LocalDDBHandlerTrigger', {
-            eventPattern: {
-                source: ['aws.cloudwatch'],
-                detailType: ['CloudWatch Alarm State Change'],
-            },
-            targets: [new LambdaFunction(ddbHandlerLambdaFunction)],
-        });
+    ddbHandlerLambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ssm:GetParameter'],
+        resources: [configParameter.parameterArn],
+      }),
+    );
 
+    configurationHandlerLambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ssm:GetParameter', 'ssm:PutParameter'],
+        resources: [`arn:aws:ssm:${Aws.REGION}:${Aws.ACCOUNT_ID}:parameter/CloudWatchAlarmWidgetConfigCDK`],
+      }),
+    );
 
+    const alarmCWCustomFunctionRole = new Role(this, 'alarmCWCustomFunctionExecutionRole', {
+      description: 'alarmCWCustomFunction Handler Role',
+      assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
+      roleName: 'alarmCWCustomFunctionExecutionRole',
+    });
 
-        // Dashboard infrastructure
+    const alarmCWCustomFunction = new Function(this, 'AlarmCWCustomFunction', {
+      code: Code.fromAsset('functions/alarm_view'),
+      handler: 'app.lambda_handler',
+      runtime: Runtime.PYTHON_3_11,
+      architecture: Architecture.X86_64,
+      role: alarmCWCustomFunctionRole,
+    });
 
-        parameterConfig['compact'] = 0
-        parameterConfig['configuratorLambdaFunction'] = configurationHandlerLambdaFunction.functionArn;
-        parameterConfig['alarmViewListSize'] = config.AlarmDashboard.alarmViewListSize?config.AlarmDashboard.alarmViewListSize:100;
+    alarmCWCustomFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
+        resources: ['*'],
+      }),
+    );
 
-        const configParameter = new StringParameter(this, 'ConfigParameter', {
-            stringValue: JSON.stringify(parameterConfig),
-            parameterName: 'CloudWatchAlarmWidgetConfigCDK',
-            description: 'Config for CloudWatch Alarm Widgets',
-        });
+    alarmCWCustomFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ssm:GetParameter'],
+        resources: [configParameter.parameterArn],
+      }),
+    );
 
+    alarmCWCustomFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'dynamodb:GetItem',
+          'dynamodb:Scan',
+          'dynamodb:Query',
+          'dynamodb:BatchGetItem',
+          'dynamodb:DescribeTable',
+          'dynamodb:ConditionCheckItem',
+        ],
+        resources: [
+          dynamoTable.tableArn,
+          `${dynamoTable.tableArn}/index/AlarmKeyIndex`,
+          `${dynamoTable.tableArn}/index/StateValueIndex`,
+          `${dynamoTable.tableArn}/index/SuppressionIndex`,
+          `${dynamoTable.tableArn}/index/NonSuppressedAlarms`,
+        ],
+      }),
+    );
 
-        ddbHandlerLambdaFunction.addToRolePolicy(
-            new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: [
-                    'ssm:GetParameter',
-                ],
-                resources: [configParameter.parameterArn]
-            })
-        );
+    const alarmListCWCustomFunctionRole = new Role(this, 'alarmListCWCustomFunctionRole', {
+      description: 'alarmListCWCustomFunction Handler Role',
+      assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
+      roleName: 'alarmCListWCustomFunctionExecutionRole',
+    });
 
+    const alarmListCWCustomFunction = new Function(this, 'AlarmListCWCustomFunction', {
+      code: Code.fromAsset('functions/alarm_list'),
+      handler: 'app.lambda_handler',
+      runtime: Runtime.PYTHON_3_11,
+      architecture: Architecture.X86_64,
+      memorySize: 165,
+      role: alarmListCWCustomFunctionRole,
+    });
 
-        configurationHandlerLambdaFunction.addToRolePolicy(
-            new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: [
-                    'ssm:GetParameter',
-                    'ssm:PutParameter'
-                ],
-                resources: [`arn:aws:ssm:${Aws.REGION}:${Aws.ACCOUNT_ID}:parameter/CloudWatchAlarmWidgetConfigCDK`]
-            })
-        );
+    alarmListCWCustomFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
+        resources: ['*'],
+      }),
+    );
 
-        const alarmCWCustomFunctionRole = new Role(this, 'alarmCWCustomFunctionExecutionRole',{
-            description: 'alarmCWCustomFunction Handler Role',
-            assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
-            roleName:'alarmCWCustomFunctionExecutionRole'
-        });
+    alarmListCWCustomFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'dynamodb:GetItem',
+          'dynamodb:Scan',
+          'dynamodb:Query',
+          'dynamodb:BatchGetItem',
+          'dynamodb:DescribeTable',
+          'dynamodb:ConditionCheckItem',
+        ],
+        resources: [
+          dynamoTable.tableArn,
+          `${dynamoTable.tableArn}/index/AlarmKeyIndex`,
+          `${dynamoTable.tableArn}/index/StateValueIndex`,
+          `${dynamoTable.tableArn}/index/SuppressionIndex`,
+          `${dynamoTable.tableArn}/index/NonSuppressedAlarms`,
+        ],
+      }),
+    );
 
-        const alarmCWCustomFunction = new Function(this, 'AlarmCWCustomFunction', {
-            code: Code.fromAsset('functions/alarm_view'),
-            handler: 'app.lambda_handler',
-            runtime: Runtime.PYTHON_3_11,
-            architecture: Architecture.X86_64,
-            role: alarmCWCustomFunctionRole
-        });
+    alarmListCWCustomFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ssm:GetParameter', 'ssm:PutParameter'],
+        resources: [configParameter.parameterArn],
+      }),
+    );
 
-        alarmCWCustomFunction.addToRolePolicy(
-            new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: [
-                    "logs:CreateLogGroup",
-                    "logs:CreateLogStream",
-                    "logs:PutLogEvents"
-                ],
-                resources: ["*"]
-            })
-        );
+    // CloudWatch Dashboard
+    new Dashboard(this, 'AlarmDashboardCDK', {
+      dashboardName: 'AlarmDashboardCDK',
+      widgets: [
+        [
+          new CustomWidget({
+            functionArn: alarmCWCustomFunction.functionArn,
+            title: 'Alarms',
+            height: 10,
+            width: 24,
+            updateOnRefresh: true,
+            updateOnResize: true,
+            updateOnTimeRangeChange: false,
+          }),
+        ],
+        [
+          new CustomWidget({
+            functionArn: alarmListCWCustomFunction.functionArn,
+            title: 'Alarm List',
+            height: 26,
+            width: 24,
+            updateOnRefresh: true,
+            updateOnResize: true,
+            updateOnTimeRangeChange: false,
+          }),
+        ],
+      ],
+    });
 
-        alarmCWCustomFunction.addToRolePolicy(
-            new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: ['ssm:GetParameter'],
-                resources: [configParameter.parameterArn],
-            })
-        );
+    //cdk-nag suppression rules
+    NagSuppressions.addResourceSuppressions(
+      ddbHandlerLambdaRole,
+      [
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'Need CloudWatchAlarmDynamoDBHandlerExecutionRole role to write to arbitrary log groups. For STS ' +
+            'the function need to assume roles that have dynamic naming',
+        },
+      ],
+      true,
+    );
 
-        alarmCWCustomFunction.addToRolePolicy(
-            new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: [
-                    "dynamodb:GetItem",
-                    "dynamodb:Scan",
-                    "dynamodb:Query",
-                    "dynamodb:BatchGetItem",
-                    "dynamodb:DescribeTable",
-                    "dynamodb:ConditionCheckItem"
-                ],
-                resources: [dynamoTable.tableArn,
-                    `${dynamoTable.tableArn}/index/AlarmKeyIndex`,
-                    `${dynamoTable.tableArn}/index/StateValueIndex`,
-                    `${dynamoTable.tableArn}/index/SuppressionIndex`,
-                    `${dynamoTable.tableArn}/index/NonSuppressedAlarms`
-                ],
-            })
-        );
+    NagSuppressions.addResourceSuppressions(
+      configurationHandlerLambdaRole,
+      [
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'Need CloudWatchAlarmHandlerExecutionRole to write to arbitrary log groups',
+        },
+      ],
+      true,
+    );
 
-        const alarmListCWCustomFunctionRole = new Role(this, 'alarmListCWCustomFunctionRole',{
-            description: 'alarmListCWCustomFunction Handler Role',
-            assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
-            roleName:'alarmCListWCustomFunctionExecutionRole'
-        });
+    NagSuppressions.addResourceSuppressions(
+      alarmCWCustomFunctionRole,
+      [
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'Need alarmCWCustomFunctionExecutionRole to write to arbitrary log groups',
+        },
+      ],
+      true,
+    );
 
-        const alarmListCWCustomFunction = new Function(this, 'AlarmListCWCustomFunction', {
-            code: Code.fromAsset('functions/alarm_list'),
-            handler: 'app.lambda_handler',
-            runtime: Runtime.PYTHON_3_11,
-            architecture: Architecture.X86_64,
-            memorySize: 165,
-            role: alarmListCWCustomFunctionRole
-        });
+    NagSuppressions.addResourceSuppressions(
+      alarmListCWCustomFunctionRole,
+      [
+        {
+          id: 'AwsSolutions-IAM5',
+          reason: 'Need alarmCWCustomFunctionExecutionRole to write to arbitrary log groups',
+        },
+      ],
+      true,
+    );
 
-        alarmListCWCustomFunction.addToRolePolicy(
-            new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: [
-                    "logs:CreateLogGroup",
-                    "logs:CreateLogStream",
-                    "logs:PutLogEvents"
-                ],
-                resources: ["*"]
-            })
-        );
+    NagSuppressions.addResourceSuppressions(
+      dynamoTable,
+      [
+        {
+          id: 'AwsSolutions-DDB3',
+          reason: "Alarm data doesn't require PITR",
+        },
+      ],
+      true,
+    );
 
-        alarmListCWCustomFunction.addToRolePolicy(
-            new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: [
-                    "dynamodb:GetItem",
-                    "dynamodb:Scan",
-                    "dynamodb:Query",
-                    "dynamodb:BatchGetItem",
-                    "dynamodb:DescribeTable",
-                    "dynamodb:ConditionCheckItem"
-                ],
-                resources: [dynamoTable.tableArn,
-                    `${dynamoTable.tableArn}/index/AlarmKeyIndex`,
-                    `${dynamoTable.tableArn}/index/StateValueIndex`,
-                    `${dynamoTable.tableArn}/index/SuppressionIndex`,
-                    `${dynamoTable.tableArn}/index/NonSuppressedAlarms`
-                ],
-            })
-        );
+    new CfnOutput(this, 'CustomEventBusArn', {
+      value: cloudwatchEventBus.eventBusArn,
+    }).value;
 
-        alarmListCWCustomFunction.addToRolePolicy(
-            new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: [
-                    'ssm:GetParameter',
-                    'ssm:PutParameter'
-                ],
-                resources: [configParameter.parameterArn],
-            })
-        );
-
-
-
-        // CloudWatch Dashboard
-        new Dashboard(this, 'AlarmDashboardCDK', {
-            dashboardName: 'AlarmDashboardCDK',
-            widgets: [
-                [new CustomWidget({
-                    functionArn: alarmCWCustomFunction.functionArn,
-                    title: 'Alarms',
-                    height: 10,
-                    width: 24,
-                    updateOnRefresh: true,
-                    updateOnResize: true,
-                    updateOnTimeRangeChange: false
-                })],
-                [new CustomWidget({
-                    functionArn: alarmListCWCustomFunction.functionArn,
-                    title: "Alarm List",
-                    height: 26,
-                    width: 24,
-                    updateOnRefresh: true,
-                    updateOnResize: true,
-                    updateOnTimeRangeChange: false
-                })]
-            ],
-        });
-
-        //cdk-nag suppression rules
-        NagSuppressions.addResourceSuppressions(ddbHandlerLambdaRole,[
-            {
-                id: 'AwsSolutions-IAM5',
-                reason:'Need CloudWatchAlarmDynamoDBHandlerExecutionRole role to write to arbitrary log groups. For STS ' +
-                    'the function need to assume roles that have dynamic naming',
-            }
-        ], true);
-
-        NagSuppressions.addResourceSuppressions(configurationHandlerLambdaRole,[
-            {
-                id: 'AwsSolutions-IAM5',
-                reason:'Need CloudWatchAlarmHandlerExecutionRole to write to arbitrary log groups',
-            }
-        ], true);
-
-        NagSuppressions.addResourceSuppressions(alarmCWCustomFunctionRole,[
-            {
-                id: 'AwsSolutions-IAM5',
-                reason:'Need alarmCWCustomFunctionExecutionRole to write to arbitrary log groups'
-            }
-        ], true);
-
-        NagSuppressions.addResourceSuppressions(alarmListCWCustomFunctionRole,[
-            {
-                id: 'AwsSolutions-IAM5',
-                reason:'Need alarmCWCustomFunctionExecutionRole to write to arbitrary log groups'
-            }
-        ], true);
-
-
-        NagSuppressions.addResourceSuppressions(dynamoTable,[
-            {
-                id: 'AwsSolutions-DDB3',
-                reason: "Alarm data doesn't require PITR"
-            }
-        ], true);
-
-
-
-
-
-        new CfnOutput(this, 'CustomEventBusArn', {
-            value: cloudwatchEventBus.eventBusArn
-        }).value;
-
-        new CfnOutput(this, 'CustomDynamoDBFunctionRoleArn',{
-            value: ddbHandlerLambdaRole.roleArn
-        }).value;
-    }
+    new CfnOutput(this, 'CustomDynamoDBFunctionRoleArn', {
+      value: ddbHandlerLambdaRole.roleArn,
+    }).value;
+  }
 }
