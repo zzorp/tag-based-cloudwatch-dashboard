@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import {App} from 'aws-cdk-lib';
-import { IemDashboardStack } from '../lib/iem-dashboard-stack';
-import {AlarmDashboardStack} from "../lib/alarm-dashboard-stack";
+import { IemDashboardStack } from '../src/stacks/metric-dashboard-stack';
+import {AlarmDashboardStack} from "../src/stacks/alarm-dashboard-stack";
 import { AwsSolutionsChecks } from 'cdk-nag'
 import { Aspects } from 'aws-cdk-lib';
+import {loadConfig} from "../config/config.schema";
 
-const config = require('../lib/config.json');
+const config = loadConfig();
 
 if ( config.AlarmDashboard?.enabled && (!config.AlarmDashboard.organizationId || !config.AlarmDashboard.organizationId.startsWith("o-") ) ){
-    throw new Error('Please edit `lib/config.json` and add `organizationId` before continuing');
+    throw new Error('Please edit `config/config.json` and add `organizationId` before continuing');
 }
 
 
