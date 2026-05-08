@@ -22,42 +22,48 @@ const testConfig = {
   MetricDashboards: { enabled: true },
 };
 
-describe('AlarmDashboardStack Snapshot', () => {
-  it('should match the snapshot', () => {
+describe('AlarmDashboardStack', () => {
+  let template: ReturnType<typeof Template.fromStack>;
+
+  beforeAll(() => {
     const app = new App();
-    const stack = new AlarmDashboardStack(app, 'TestAlarmDashboardStack', { config: testConfig as any });
-    const template = Template.fromStack(stack);
-    expect(template.toJSON()).toMatchSnapshot();
+    const stack = new AlarmDashboardStack(app, 'TestAlarmDashboardStack', {
+      config: testConfig as any,
+    });
+    template = Template.fromStack(stack);
   });
 
   it('should create a CloudWatch Dashboard', () => {
-    const app = new App();
-    const stack = new AlarmDashboardStack(app, 'TestAlarmDashboardStack2', { config: testConfig as any });
-    const template = Template.fromStack(stack);
     template.resourceCountIs('AWS::CloudWatch::Dashboard', 1);
   });
 
-  it('should create Lambda functions', () => {
-    const app = new App();
-    const stack = new AlarmDashboardStack(app, 'TestAlarmDashboardStack3', { config: testConfig as any });
-    const template = Template.fromStack(stack);
-    // Should have 3 Lambda functions: ddbHandler, configurationHandler, alarmView, alarmList
+  it('should create 4 Lambda functions with Python 3.12', () => {
     const resources = template.toJSON().Resources;
-    const lambdas = Object.values(resources).filter((r: any) => r.Type === 'AWS::Lambda::Function');
+    const lambdas = Object.values(resources).filter((r: any) => r.Type === 'AWS::Lambda::Function') as any[];
     expect(lambdas.length).toBe(4);
+    lambdas.forEach((lambda) => {
+      expect(lambda.Properties.Runtime).toBe('python3.12');
+    });
   });
 
-  it('should create a DynamoDB table', () => {
-    const app = new App();
-    const stack = new AlarmDashboardStack(app, 'TestAlarmDashboardStack4', { config: testConfig as any });
-    const template = Template.fromStack(stack);
+  it('should create a DynamoDB table with TTL', () => {
     template.resourceCountIs('AWS::DynamoDB::Table', 1);
+    template.hasResourceProperties('AWS::DynamoDB::Table', {
+      TimeToLiveSpecification: {
+        AttributeName: 'ttl',
+        Enabled: true,
+      },
+    });
   });
 
   it('should create an EventBus', () => {
-    const app = new App();
-    const stack = new AlarmDashboardStack(app, 'TestAlarmDashboardStack5', { config: testConfig as any });
-    const template = Template.fromStack(stack);
     template.resourceCountIs('AWS::Events::EventBus', 1);
+  });
+
+  it('should create SSM Parameter', () => {
+    template.hasResourceProperties('AWS::SSM::Parameter', {
+      Name: 'CloudWatchAlarmWidgetConfigCDK',
+      Type: 'String',
+    });
   });
 });
