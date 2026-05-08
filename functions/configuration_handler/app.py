@@ -1,85 +1,91 @@
-import boto3
+"""
+Configuration Handler Lambda
+Manages dashboard configuration changes (filters, sorting) and alarm suppression/unsuppression.
+"""
+
+import os
+import sys
 import json
+
+# Add shared module to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+import boto3
+from shared.utils import (
+    get_parameter_from_store, put_parameter_to_store,
+    apply_filters_from_event, safe_html, validate_account_id
+)
 
 ssm_client = boto3.client('ssm')
 
 
-def get_parameter_from_store(param_name):
-    response = ssm_client.get_parameter(
-        Name=param_name,
-        WithDecryption=True  # Use this if the parameter value is encrypted
-    )
-    return response['Parameter']['Value']
-
-
-def put_parameter_to_store(param_name, param_value):
-    response = ssm_client.put_parameter(
-        Name=param_name,
-        Value=param_value,
-        Type='String',
-        Overwrite=True
-    )
-    return response
-
-
 def handle_suppression_request(event, config):
+    """Suppress an alarm so it doesn't show on the dashboard widgets."""
     dynamodb = boto3.resource('dynamodb')
-    table = dynamodb.Table(config['dynamoTableName'])
-    update_expression = f'''SET suppressed=:suppressed'''
-    expression_attribute_values = {
-        ':suppressed': 1
-    }
+    table_name = config.get('dynamoTableName', os.environ.get('DYNAMO_TABLE_NAME', 'AlarmStateChangeTableCDK'))
+    table = dynamodb.Table(table_name)
+
+    alarm_key = event['suppress']
+
+    # Validate alarm key format: {account}#{name}#{region}
+    parts = alarm_key.split('#')
+    if len(parts) < 2:
+        return '<pre>Error: Invalid alarm key format.</pre>'
 
     table.update_item(
-        Key={
-            'alarmKey': event['suppress']
-        },
-        UpdateExpression=update_expression,
-        ExpressionAttributeValues=expression_attribute_values,
+        Key={'alarmKey': alarm_key},
+        UpdateExpression='SET suppressed = :suppressed',
+        ExpressionAttributeValues={':suppressed': 1},
         ReturnValues="ALL_NEW"
     )
 
-    return f'''<pre>The Alarm "{event['suppress']}" has been suppressed. It won't show up on the widgets!'''
+    return f'<pre>The Alarm "{safe_html(alarm_key)}" has been suppressed. It will not appear on the dashboard.</pre>'
+
+
+def handle_unsuppression_request(event, config):
+    """Unsuppress an alarm so it shows on the dashboard widgets again."""
+    dynamodb = boto3.resource('dynamodb')
+    table_name = config.get('dynamoTableName', os.environ.get('DYNAMO_TABLE_NAME', 'AlarmStateChangeTableCDK'))
+    table = dynamodb.Table(table_name)
+
+    alarm_key = event['unsuppress']
+
+    # Validate alarm key format
+    parts = alarm_key.split('#')
+    if len(parts) < 2:
+        return '<pre>Error: Invalid alarm key format.</pre>'
+
+    table.update_item(
+        Key={'alarmKey': alarm_key},
+        UpdateExpression='SET suppressed = :suppressed',
+        ExpressionAttributeValues={':suppressed': 0},
+        ReturnValues="ALL_NEW"
+    )
+
+    return f'<pre>The Alarm "{safe_html(alarm_key)}" has been unsuppressed. It will appear on the dashboard again.</pre>'
 
 
 def lambda_handler(event, context):
-    print(event)
-    print(context)
-    message = "Configuration applied:"
-    config = json.loads(get_parameter_from_store('CloudWatchAlarmWidgetConfigCDK'))
-    if 'region' in event:
-        config['region_filter'] = event['region']
-        message += f" region_filter={event['region']}"
+    """
+    Handle configuration changes, suppressions, and unsuppressions.
+    """
+    print(f'Event: {json.dumps(event, default=str)}')
 
-    if 'sort_by_region' in event:
-        config['sort_by_region'] = event['sort_by_region']
-        message += f" sort_by_region={event['sort_by_region']}"
+    param_name = os.environ.get('CONFIG_PARAMETER_NAME', 'CloudWatchAlarmWidgetConfigCDK')
+    config = json.loads(get_parameter_from_store(param_name))
 
-    if 'account' in event:
-        config['account_filter'] = event['account']
-        message += f" account_filter={event['account']}"
-
-    if 'sort_by_account' in event:
-        config['sort_by_account'] = event['sort_by_account']
-        message += f" sort_by_account={event['sort_by_account']}"
-
-    if 'state' in event:
-        config['state_filter'] = event['state']
-        message += f" state_filter={event['state']}"
-
-    if 'priority' in event:
-        config['priority_filter'] = event['priority']
-        message += f" priority_filter={event['priority']}"
-
+    # Handle suppression request
     if 'suppress' in event:
-        return handle_suppression_request(event,config)
+        return handle_suppression_request(event, config)
 
-    if 'currentAlarmViewPage' in event:
-        config['currentAlarmViewPage'] = int(event['currentAlarmViewPage'])
+    # Handle unsuppression request
+    if 'unsuppress' in event:
+        return handle_unsuppression_request(event, config)
 
+    # Handle filter/config changes
+    config, changed = apply_filters_from_event(event, config)
 
-
-    message += f", current config:"
+    message = "Configuration applied:"
     if 'region_filter' in config:
         message += f" region_filter={config['region_filter']}"
     if 'account_filter' in config:
@@ -93,5 +99,7 @@ def lambda_handler(event, context):
     if 'priority_filter' in config:
         message += f" priority_filter={config['priority_filter']}"
 
-    put_parameter_to_store('CloudWatchAlarmWidgetConfigCDK', json.dumps(config))
+    if changed:
+        put_parameter_to_store(param_name, json.dumps(config))
+
     return message

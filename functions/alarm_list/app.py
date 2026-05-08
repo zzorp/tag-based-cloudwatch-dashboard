@@ -1,570 +1,472 @@
-import boto3
-from boto3.dynamodb.conditions import Attr
-from datetime import datetime
+"""
+Alarm List Custom Widget Lambda
+Renders a filterable, paginated table of all alarms with filtering,
+sorting, suppression, and unsuppression capabilities.
+"""
+
+import os
+import sys
 import math
 import json
+from datetime import datetime
+
+# Add shared module to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+import boto3
+from boto3.dynamodb.conditions import Attr
+from shared.utils import (
+    get_config, get_alarm_type, safe_html, get_filter_icon,
+    get_suppress_icon, get_unsuppress_icon, apply_filters_from_event,
+    put_parameter_to_store, SHARED_CSS
+)
 
 dynamodb = boto3.resource('dynamodb')
-ssm_client = boto3.client('ssm')
-
-
-def get_parameter_from_store(param_name):
-    response = ssm_client.get_parameter(
-        Name=param_name,
-        WithDecryption=True  # Use this if the parameter value is encrypted
-    )
-    return response['Parameter']['Value']
-
-
-def is_expression_alarm(alarm):
-    for metric in alarm["detail"]["configuration"]["metrics"]:
-        if 'expression' in metric:
-            return True
-
-    return False
-
-
-def sort_by_property(alarms, prop):
-    return sorted(alarms, key=lambda x: x[prop])
-
-
-def filter_by_property(alarms, prop, value):
-    if prop == 'region':
-        return [alarm for alarm in alarms if alarm['alarmKey'].split('#')[2] == value]
-    if prop == 'account':
-        return [alarm for alarm in alarms if alarm['alarmKey'].split('#')[0] == value]
-    if prop == 'state':
-        return [alarm for alarm in alarms if alarm['detail']['state']['value'] == value]
-    if prop == 'priority':
-        return [alarm for alarm in alarms if int(alarm['priority']) == int(value)]
-    return alarms
-
-
-def get_filter_icon(color_code):
-    return f'''<?xml version="1.0" encoding="iso-8859-1"?>
-            <svg fill="#{color_code}" height="12px" width="12px" version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
-                 viewBox="0 0 300.906 300.906" xml:space="preserve">
-            <g>
-                <g>
-                    <path d="M288.953,0h-277c-5.522,0-10,4.478-10,10v49.531c0,5.522,4.478,10,10,10h12.372l91.378,107.397v113.978
-                        c0,3.688,2.03,7.076,5.281,8.816c1.479,0.792,3.101,1.184,4.718,1.184c1.94,0,3.875-0.564,5.548-1.68l49.5-33
-                        c2.782-1.854,4.453-4.977,4.453-8.32v-80.978l91.378-107.397h12.372c5.522,0,10-4.478,10-10V10C298.953,4.478,294.476,0,288.953,0
-                        z M167.587,166.77c-1.539,1.809-2.384,4.105-2.384,6.48v79.305l-29.5,19.666V173.25c0-2.375-0.845-4.672-2.384-6.48L50.585,69.531
-                        h199.736L167.587,166.77z M278.953,49.531h-257V20h257V49.531z"/>
-                </g>
-            </g>
-            </svg>'''
-
-
-def get_suppress_icon():
-    return f'''<svg fill="#9a9898" height="12px" width="12px" version="1.1" id="Capa_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 27.965 27.965" xml:space="preserve">
-    <g id="SVGRepo_bgCarrier" stroke-width="0">
-    </g>
-    <g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g>
-    <g id="SVGRepo_iconCarrier"> <g>
-    <g id="c142_x">
-    <path d="M13.98,0C6.259,0,0,6.261,0,13.983c0,7.721,6.259,13.982,13.98,13.982c7.725,0,13.985-6.262,13.985-13.982
-    C27.965,6.261,21.705,0,13.98,0z
-    M19.992,17.769l-2.227,2.224c0,0-3.523-3.78-3.786-3.78c-0.259,0-3.783,3.78-3.783,3.78
-    l-2.228-2.224c0,0,3.784-3.472,3.784-3.781c0-0.314-3.784-3.787-3.784-3.787l2.228-2.229c0,0,3.553,3.782,3.783,3.782
-    c0.232,0,3.786-3.782,3.786-3.782l2.227,2.229c0,0-3.785,3.523-3.785,3.787C16.207,14.239,19.992,17.769,19.992,17.769z">
-    </path>
-    </g>
-    <g id="Capa_1_104_"> </g> </g> </g></svg>'''
 
 
 def paginate_items(items, current_page, page_size):
-    pages = math.ceil(len(items) / page_size)
-    print(f'Got total {len(items)} items')
-    print(f'Got total {pages} of pages')
-    print(f'This number ({pages*page_size}) should be higher or same than items ')
+    """Paginate a list of items. Returns the items for the current page."""
+    if not items:
+        return []
 
-    # if current_page < 1 or current_page > pages:
-    #     raise ValueError("Invalid current page number")
+    pages = math.ceil(len(items) / page_size)
 
     if current_page < 1:
         current_page = 1
-
     if current_page > pages:
         current_page = pages
 
     start_index = (current_page - 1) * page_size
     end_index = start_index + page_size
-    page_items = items[start_index:end_index]
-
-    return page_items
-
-
-def put_parameter_to_store(param_name, param_value):
-    response = ssm_client.put_parameter(
-        Name=param_name,
-        Value=param_value,
-        Type='String',
-        Overwrite=True
-    )
-    return response
+    return items[start_index:end_index]
 
 
 def get_account_list(alarms):
-    unique_accounts = set()
-    for alarm in alarms:
-        unique_accounts.add(alarm['alarmKey'].split('#')[0])
-
-    return sorted(list(unique_accounts))
+    """Get sorted list of unique account IDs from alarms."""
+    return sorted({alarm['alarmKey'].split('#')[0] for alarm in alarms})
 
 
 def get_region_list(alarms):
-    unique_regions = set()
+    """Get sorted list of unique regions from alarms."""
+    regions = set()
     for alarm in alarms:
-        unique_regions.add(alarm['alarmKey'].split('#')[2])
+        parts = alarm['alarmKey'].split('#')
+        if len(parts) > 2:
+            regions.add(parts[2])
+    return sorted(regions)
 
-    return list(unique_regions)
+
+def build_filter_popup(endpoint, filter_type, options):
+    """Build a filter popup with options."""
+    html = f'''<cwdb-action action="html" display="popup" event="click">
+    <div class="filter-popup">'''
+    for option in options:
+        label = safe_html(str(option.get('label', option.get('value', ''))))
+        value = option.get('value', '')
+        html += f'''<a class="btn btn-primary">{label}</a>
+        <cwdb-action action="call" confirmation="Apply filter: {label}"
+            endpoint="{endpoint}">
+            {{ "{filter_type}": "{value}" }}
+        </cwdb-action>'''
+    html += '</div></cwdb-action>'
+    return html
+
+
+def build_clear_filter_action(endpoint, filter_type):
+    """Build a clear filter action (when filter is active)."""
+    return f'''<cwdb-action action="call" confirmation="Remove this filter"
+        endpoint="{endpoint}">
+        {{ "{filter_type}": "none" }}
+    </cwdb-action>'''
+
+
+def build_pagination_html(current_page, total_pages, endpoint):
+    """Build pagination UI with Previous/Next and ellipsis."""
+    if total_pages <= 1:
+        return ''
+
+    html = '<div class="pagination">'
+
+    # Previous button
+    if current_page > 1:
+        html += f'''<a>&laquo; Prev</a><cwdb-action action="call"
+            endpoint="{endpoint}">
+            {{ "currentAlarmViewPage": {current_page - 1} }}
+        </cwdb-action>'''
+
+    # Page numbers with ellipsis
+    pages_to_show = set()
+    pages_to_show.add(1)
+    pages_to_show.add(total_pages)
+    for p in range(max(1, current_page - 2), min(total_pages + 1, current_page + 3)):
+        pages_to_show.add(p)
+
+    prev_page = 0
+    for p in sorted(pages_to_show):
+        if p - prev_page > 1:
+            html += '<span>...</span>'
+        if p == current_page:
+            html += f'<span class="current-page">{p}</span>'
+        else:
+            html += f'''<a>{p}</a><cwdb-action action="call"
+                endpoint="{endpoint}">
+                {{ "currentAlarmViewPage": {p} }}
+            </cwdb-action>'''
+        prev_page = p
+
+    # Next button
+    if current_page < total_pages:
+        html += f'''<a>Next &raquo;</a><cwdb-action action="call"
+            endpoint="{endpoint}">
+            {{ "currentAlarmViewPage": {current_page + 1} }}
+        </cwdb-action>'''
+
+    html += '</div>'
+    return html
+
+
+def build_alarm_detail_popup(alarm, auxiliary_info, region):
+    """Build the detail popup HTML for a single alarm row."""
+    aux_html = ''
+
+    # Alternate Contact
+    if 'AlternateContact' in auxiliary_info and auxiliary_info['AlternateContact']:
+        aux_html += "<hr /><h4>Alternate Contact (OPERATIONS)</h4><div>"
+        contact = auxiliary_info['AlternateContact']
+        if 'Name' in contact:
+            aux_html += f'Name: {safe_html(contact["Name"])}<br />'
+        if 'Title' in contact:
+            aux_html += f'Title: {safe_html(contact["Title"])}<br />'
+        if 'PhoneNumber' in contact:
+            aux_html += f'Phone: {safe_html(contact["PhoneNumber"])}<br />'
+        if 'EmailAddress' in contact:
+            email = safe_html(contact["EmailAddress"])
+            aux_html += f'Email: <a href="mailto:{email}">{email}</a>'
+        aux_html += '</div>'
+
+    # Account Info
+    if 'Account' in auxiliary_info and auxiliary_info['Account']:
+        aux_html += "<hr /><h4>Account Info</h4>"
+        acct = auxiliary_info['Account']
+        aux_html += f'<div>Id: {safe_html(acct.get("Id", ""))}</div>'
+        if 'Status' in acct:
+            aux_html += f'<div>Status: {safe_html(acct["Status"])}</div>'
+        if 'Email' in acct:
+            email = safe_html(acct["Email"])
+            aux_html += f'<div>Email: <a href="mailto:{email}">{email}</a></div>'
+
+    # Alarm Details
+    aux_html += "<hr /><h4>Alarm Details</h4>"
+    aux_html += f'<div>Name: {safe_html(alarm["detail"]["alarmName"])}</div>'
+    aux_html += f'<div>State: {safe_html(alarm["detail"]["state"]["value"])}</div>'
+    aux_html += f'<div>Timestamp: {safe_html(alarm["detail"]["state"]["timestamp"])}</div>'
+    aux_html += f'<div>Reason: {safe_html(alarm["detail"]["state"]["reason"])}</div>'
+
+    # Metric Info
+    aux_html += '<hr /><h4>Metric Info</h4>'
+    if "metrics" in alarm.get("detail", {}).get("configuration", {}):
+        for metric in alarm["detail"]["configuration"]["metrics"]:
+            if 'expression' in metric:
+                aux_html += f'<div><b>Expression:</b> {safe_html(metric["expression"])}</div>'
+                aux_html += f'<div><b>Label:</b> {safe_html(metric["label"])}</div>'
+            if 'metricStat' in metric:
+                aux_html += f'<div>Namespace: {safe_html(metric["metricStat"]["metric"]["namespace"])}</div>'
+                aux_html += f'<div>Metric: {safe_html(metric["metricStat"]["metric"]["name"])}</div>'
+                for dim_key, dim_val in metric["metricStat"]["metric"].get("dimensions", {}).items():
+                    aux_html += f'<div>{safe_html(dim_key)}: {safe_html(dim_val)}</div>'
+            aux_html += '<hr />'
+    else:
+        if "alarmRule" in alarm.get("detail", {}).get("configuration", {}):
+            aux_html += f'<div>Alarm Rule: {safe_html(alarm["detail"]["configuration"]["alarmRule"])}</div>'
+            aux_html += '<hr />'
+
+    # Alarm Link (using actual region)
+    alarm_name_encoded = safe_html(alarm["detail"]["alarmName"])
+    aux_html += f'<hr /><h4>Alarm Link</h4>'
+    aux_html += (f'<a href="https://{safe_html(region)}.console.aws.amazon.com/cloudwatch/'
+                 f'home?region={safe_html(region)}#alarmsV2:alarm/{alarm_name_encoded}?">'
+                 f'View in CloudWatch Console</a>')
+
+    return aux_html
 
 
 def lambda_handler(event, context):
-    print(event)
-    config = json.loads(get_parameter_from_store('CloudWatchAlarmWidgetConfigCDK'))
-    if 'currentAlarmViewPage' in event:
-        config['currentAlarmViewPage'] = int(event['currentAlarmViewPage'])
-    if 'region' in event:
-        config['region_filter'] = event['region']
+    """Render the alarm list custom widget."""
+    print(f'Event: {json.dumps(event, default=str)}')
 
-    if 'sort_by_region' in event:
-        config['sort_by_region'] = event['sort_by_region']
+    config = get_config(use_cache=False)  # Always fresh for filter state
 
-    if 'account' in event:
-        config['account_filter'] = event['account']
+    # Apply filters from event and only persist if something changed
+    config, filters_changed = apply_filters_from_event(event, config)
+    if filters_changed:
+        param_name = os.environ.get('CONFIG_PARAMETER_NAME', 'CloudWatchAlarmWidgetConfigCDK')
+        put_parameter_to_store(param_name, json.dumps(config))
 
-    if 'sort_by_account' in event:
-        config['sort_by_account'] = event['sort_by_account']
+    configurator_lambda_function = config.get(
+        'configuratorLambdaFunction',
+        os.environ.get('CONFIGURATOR_LAMBDA_ARN', '')
+    )
+    table_name = config.get('dynamoTableName', os.environ.get('DYNAMO_TABLE_NAME', 'AlarmStateChangeTableCDK'))
+    table = dynamodb.Table(table_name)
 
-    if 'state' in event:
-        config['state_filter'] = event['state']
+    # Determine filter icon colors (red = active)
+    region_filter_active = 'region_filter' in config and config['region_filter'] != "none"
+    account_filter_active = 'account_filter' in config and config['account_filter'] != "none"
+    state_filter_active = 'state_filter' in config and config['state_filter'] != "none"
+    priority_filter_active = 'priority_filter' in config and config['priority_filter'] != "none"
 
-    if 'priority' in event:
-        config['priority_filter'] = event['priority']
+    region_icon_color = "ff0000" if region_filter_active else "000000"
+    account_icon_color = "ff0000" if account_filter_active else "000000"
+    state_icon_color = "ff0000" if state_filter_active else "000000"
+    priority_icon_color = "ff0000" if priority_filter_active else "000000"
 
-    put_parameter_to_store('CloudWatchAlarmWidgetConfigCDK', json.dumps(config))
+    any_filter_active = region_filter_active or account_filter_active or state_filter_active or priority_filter_active
 
-    configurator_lambda_function = ""
-    try:
-        configurator_lambda_function = config['configuratorLambdaFunction']
-        print(f'Configurator Lambda function {configurator_lambda_function}')
-    except KeyError:
-        print('Configurator Lambda function not found')
-
-    table = dynamodb.Table(config['dynamoTableName'])
-    print(f'Accessing table {config["dynamoTableName"]}')
-    region_filter_icon_color = "000000"
-    account_filter_icon_color = "000000"
-    priority_filter_icon_color = "000000"
-    state_filter_icon_color = "000000"
-
+    # Build DynamoDB filter expressions
     filter_expressions = []
-
-    if 'region_filter' in config and config['region_filter'] != "none":
+    if region_filter_active:
         filter_expressions.append(Attr("alarmKey").contains("#" + config['region_filter']))
-        region_filter_icon_color = "ff0000"
-
-    if 'account_filter' in config and config['account_filter'] != "none":
+    if account_filter_active:
         filter_expressions.append(Attr("alarmKey").begins_with(config['account_filter'] + "#"))
-        account_filter_icon_color = "ff0000"
-
-    if 'state_filter' in config and config['state_filter'] != "none":
+    if state_filter_active:
         filter_expressions.append(Attr("stateValue").eq(config['state_filter']))
-        state_filter_icon_color = "ff0000"
-
-    if 'priority_filter' in config and config['priority_filter'] != "none":
+    if priority_filter_active:
         filter_expressions.append(Attr("priority").eq(int(config['priority_filter'])))
-        priority_filter_icon_color = "ff0000"
 
     query_params = {
         'IndexName': 'SuppressionIndex',
         'KeyConditionExpression': 'suppressed = :suppressed',
-        'ExpressionAttributeValues': {
-            ':suppressed': 0
-        },
+        'ExpressionAttributeValues': {':suppressed': 0},
         'ReturnConsumedCapacity': 'TOTAL'
     }
 
     if filter_expressions:
-        combined_filter_expression = filter_expressions[0]
+        combined = filter_expressions[0]
         for expr in filter_expressions[1:]:
-            combined_filter_expression &= expr
+            combined &= expr
+        query_params['FilterExpression'] = combined
 
-        query_params = {
-            'IndexName': 'SuppressionIndex',
-            'KeyConditionExpression': 'suppressed = :suppressed',
-            'ExpressionAttributeValues': {
-                ':suppressed': 0
-            },
-            'FilterExpression': combined_filter_expression,
-            'ReturnConsumedCapacity': 'TOTAL'
-        }
-
+    # Fetch all matching alarms
     alarms = []
-    consumedRRUs = 0
+    consumed_rrus = 0
     while True:
         response = table.query(**query_params)
         alarms.extend(response.get('Items', []))
         if 'ConsumedCapacity' in response:
-            consumedRRUs += response['ConsumedCapacity']['CapacityUnits']
+            consumed_rrus += response['ConsumedCapacity']['CapacityUnits']
         if 'LastEvaluatedKey' in response:
             query_params['ExclusiveStartKey'] = response['LastEvaluatedKey']
         else:
             break
 
-    print(f'TOTAL RRUS USED {consumedRRUs}')
-    monthly_executions = 6*60*24*30
-    print(f'Cost of the request {consumedRRUs*0.000000283}')
-    total_monthly_RRUs = consumedRRUs * monthly_executions
-    total_monthly_cost = round(total_monthly_RRUs*(0.283/1000000),2)
-    print(f'Estimated Monthly cost {total_monthly_cost}')
-    # Assumptions active alarms dashboard uses half of the RRUs (50% alarms are triggering)
-    # Ingestion of alarms and updates is 25% of cost
-    # Lambda executions are ignored due to relatively low cost impact
+    # Cost estimation
+    monthly_executions = 6 * 60 * 24 * 30  # 10-second refresh, 24/7
+    total_monthly_rrus = consumed_rrus * monthly_executions
+    total_monthly_cost = round(total_monthly_rrus * (0.283 / 1000000), 2)
+    est_monthly_cost = round(total_monthly_cost * 1.75, 2)
 
-    est_monthly_cost = round(total_monthly_cost + (total_monthly_cost*0.75), 2)
+    # Pagination
+    page = int(config.get('currentAlarmViewPage', 1))
+    if page == "none" or not page:
+        page = 1
+    page_size = int(config.get('alarmViewListSize', 100))
+    total_filtered_pages = max(1, math.ceil(len(alarms) / page_size))
+    paginated_alarms = paginate_items(alarms, page, page_size)
 
-    page = 1
-    if 'currentAlarmViewPage' in config and not config['currentAlarmViewPage'] == "none":
-        page = int(config['currentAlarmViewPage'])
+    endpoint = context.invoked_function_arn
 
-    page_size = 100
-    if 'alarmViewListSize' in config and not config['alarmViewListSize'] == "none":
-        page_size = int(config['alarmViewListSize'])
+    # Build HTML
+    html = SHARED_CSS
+    html += '<div style="width:100%;">'
 
-    total_filtered_pages = math.ceil(len(alarms) / page_size)
+    # Clear all filters button
+    if any_filter_active:
+        html += f'''<div style="margin-bottom: 8px;">
+            <a class="btn btn-primary" style="background-color: #f44336; color: white; padding: 4px 12px; border-radius: 3px;">
+            Clear All Filters</a>
+            <cwdb-action action="call" confirmation="Remove all active filters?"
+                endpoint="{endpoint}">
+                {{ "region": "none", "account": "none", "state": "none", "priority": "none" }}
+            </cwdb-action>
+        </div>'''
 
-    alarms = paginate_items(alarms, page, page_size)
+    # Pagination
+    html += build_pagination_html(page, total_filtered_pages, endpoint)
 
-    html = '''<div style="width:100%;"><p>'''
-    for total_filtered_page in range(1,total_filtered_pages+1,1):
-        if total_filtered_page == page:
-            html += f'''&nbsp;{total_filtered_page}'''
-        else:
-            html += f'''&nbsp;<a>{total_filtered_page}</a><cwdb-action action="call"
-             endpoint="{context.invoked_function_arn}">
-             {{ "currentAlarmViewPage": {total_filtered_page} }}
-            </cwdb-action>'''
-    html += '''</p></div>
-    '''
+    # Empty state
+    if not alarms:
+        html += '<div class="empty-state">'
+        html += '<p>No alarms match the current filters.</p>'
+        if any_filter_active:
+            html += '<p style="font-size: 0.9rem; margin-top: 8px;">Try clearing some filters.</p>'
+        html += '</div>'
+        html += '</div>'
+        return html
+
+    # Table header
     html += '<table style="width:100%;">'
-    html += f'''\t<thead><tr>
-             <th>Alarm State <a>{get_filter_icon(state_filter_icon_color)}</a>'''
+    html += '<thead><tr>'
 
-    if ('state_filter' in config and config['state_filter'] == "none") or 'state_filter' not in config:
-        html += f'''<cwdb-action action="html" 
-             display="popup" event="click">
-             <style>
-                .center {{
-                  position: absolute;
-                  top: 50%;
-                  left: 50%;
-                  transform: translate(-50%, -50%);
-                  padding: 10px;
-                }}
-                
-                .center a {{
-                margin: 10px;
-                
-                }}
-             </style>
-             <div class="center">
-                
-                    <a class="btn btn-primary">OK</a><cwdb-action action="call" confirmation="This will remove the state filter!"
-                         endpoint="{context.invoked_function_arn}">
-                         {{ "state": "OK" }}
-                        </cwdb-action>
-                    <a class="btn btn-primary">ALARM</a><cwdb-action action="call" confirmation="This will remove the state filter!"
-                         endpoint="{context.invoked_function_arn}">
-                         {{ "state": "ALARM" }}
-                        </cwdb-action>
-                    <a class="btn btn-primary">INSUFFICIENT_DATA</a><cwdb-action action="call" confirmation="This will remove the state filter!"
-                         endpoint="{context.invoked_function_arn}">
-                         {{ "state": "INSUFFICIENT_DATA" }}
-                        </cwdb-action>
-            
-            </div>
-            </cwdb-action>'''
+    # State column header with filter
+    html += f'<th>Alarm State <a>{get_filter_icon(state_icon_color)}</a>'
+    if not state_filter_active:
+        html += build_filter_popup(endpoint, 'state', [
+            {'label': 'OK', 'value': 'OK'},
+            {'label': 'ALARM', 'value': 'ALARM'},
+            {'label': 'INSUFFICIENT_DATA', 'value': 'INSUFFICIENT_DATA'}
+        ])
     else:
-        html += f'''<cwdb-action action="call" confirmation="This will remove the state filter!"
-                 endpoint="{context.invoked_function_arn}">
-                 {{ "state": "none" }}
-                </cwdb-action>'''
-    html += f'''</th>
-             <th>Priority <a>{get_filter_icon(priority_filter_icon_color)}</a>'''
+        html += build_clear_filter_action(endpoint, 'state')
+    html += '</th>'
 
-    if ('priority_filter' in config and config['priority_filter'] == "none") or 'priority_filter' not in config:
-        html += f'''<cwdb-action action="html" 
-                     display="popup" event="click">
-                     <style>
-                        .center {{
-                          position: absolute;
-                          top: 50%;
-                          left: 50%;
-                          transform: translate(-50%, -50%);
-                          padding: 10px;
-                        }}
-                        
-                        .center a {{
-                        margin: 10px;
-                        
-                        }}
-                     </style>
-                     <div class="center">
-                        
-                            <a class="btn btn-primary">CRITICAL</a><cwdb-action action="call" confirmation="This will remove the state filter!"
-                                 endpoint="{context.invoked_function_arn}">
-                                 {{ "priority": 1 }}
-                                </cwdb-action>
-                       
-                            <a class="btn btn-primary">Medium</a><cwdb-action action="call" confirmation="This will remove the state filter!"
-                                 endpoint="{context.invoked_function_arn}">
-                                 {{ "priority": 2 }}
-                                </cwdb-action>
-           
-                            <a class="btn btn-primary">Low</a><cwdb-action action="call" confirmation="This will remove the state filter!"
-                                 endpoint="{context.invoked_function_arn}">
-                                 {{ "priority": 3 }}
-                                </cwdb-action>
-                
-                    </div>
-                    </cwdb-action>'''
+    # Priority column header with filter
+    html += f'<th>Priority <a>{get_filter_icon(priority_icon_color)}</a>'
+    if not priority_filter_active:
+        html += build_filter_popup(endpoint, 'priority', [
+            {'label': 'CRITICAL', 'value': '1'},
+            {'label': 'Medium', 'value': '2'},
+            {'label': 'Low', 'value': '3'}
+        ])
     else:
-        html += f'''<cwdb-action action="call" confirmation="This will remove the priority filter!"
-             endpoint="{context.invoked_function_arn}">
-             {{ "priority": "none" }}
-            </cwdb-action>'''
-    html += f'''</th>
-            <th>Alarm Name</th>
-            <th>Alarm updated</th>
-            <th>Alarm Account <a>{get_filter_icon(account_filter_icon_color)}</a>'''
-    if ('account_filter' in config and config['account_filter'] == "none") or 'account_filter' not in config:
-        html += f'''<cwdb-action action="html" 
-                 display="popup" event="click">
-                 <style>
-                    .center {{
-                      position: absolute;
-                      top: 50%;
-                      left: 50%;
-                      transform: translate(-50%, -50%);
-                      padding: 10px;
-                    }}
-                    
-                    .center a {{
-                    margin: 10px;
-                    
-                    }}
-                 </style>
-                 <div class="center">
-                 '''
+        html += build_clear_filter_action(endpoint, 'priority')
+    html += '</th>'
 
-        for account in get_account_list(alarms):
-            html += f'''
-                    <a class="btn btn-primary">{account}</a><cwdb-action action="call" confirmation="This will remove the state filter!"
-                         endpoint="{context.invoked_function_arn}">
-                        {{ "account": "{account}" }}
-                    </cwdb-action>
-                '''
-        html += f'''</div></cwdb-action>'''
+    html += '<th>Alarm Name</th>'
+    html += '<th>Alarm Updated</th>'
 
+    # Account column header with filter
+    html += f'<th>Account <a>{get_filter_icon(account_icon_color)}</a>'
+    if not account_filter_active:
+        account_options = [{'label': acc, 'value': acc} for acc in get_account_list(alarms)]
+        html += build_filter_popup(endpoint, 'account', account_options)
     else:
-        html += f'''<cwdb-action action="call" confirmation="This will remove the account filter!"
-             endpoint="{context.invoked_function_arn}">
-             {{ "account": "none" }}
-            </cwdb-action></th>'''
-    html += f'''<th>Region <a>{get_filter_icon(region_filter_icon_color)}</a>'''
+        html += build_clear_filter_action(endpoint, 'account')
+    html += '</th>'
 
-    if ('region_filter' in config and config['region_filter'] == "none") or 'region_filter' not in config:
-        html += f'''<cwdb-action action="html" 
-                 display="popup" event="click">
-                 <style>
-                    .center {{
-                        position: absolute;
-                        top: 50%;
-                        left: 50%;
-                        transform: translate(-50%, -50%);
-                        padding: 10px;
-                    }}
-                    
-                    .center a {{
-                        margin: 10px;
-                    }}
-                </style>
-                <div class="center">
-        '''
-
-        for region in get_region_list(alarms):
-            html += f'''
-                <a class="btn btn-primary">{region}</a><cwdb-action action="call" confirmation="This will remove the state filter!"
-                     endpoint="{context.invoked_function_arn}">
-                    {{ "region": "{region}" }}
-                </cwdb-action>
-            '''
-        html += f'''</div></cwdb-action>'''
-
+    # Region column header with filter
+    html += f'<th>Region <a>{get_filter_icon(region_icon_color)}</a>'
+    if not region_filter_active:
+        region_options = [{'label': r, 'value': r} for r in get_region_list(alarms)]
+        html += build_filter_popup(endpoint, 'region', region_options)
     else:
-        html += f'''<cwdb-action action="call" confirmation="This will remove the region filter!"
-             endpoint="{context.invoked_function_arn}">
-             {{ "region": "none" }}
-            </cwdb-action></th>'''
-    html +=  (f'<th>Contact email</th>'
-             '<th>Operations contact</th>'
-             f'<th><a>Cost of this</a><cwdb-action action="html" event="click" display="popup">Estimated cost of Alarm Dashboard-solution: <b>${est_monthly_cost}/mo</b><br /><br />'
-             '<div style="background-color:rgba(10, 10, 10, 0.1);; padding: 10px; font-size: 12px;">'
-             'The cost of this dashboard is mainly driven by WRU and RRUs used to store and retrieve records from the DynamoDB table and Lambda execution cost. Primary cost driver will be WRUs and RRUs and Lambda cost will be ignored as it has smaller cost impact. <br /><br />'
-             'WRUs are used when an Alarm changes state and the event is forwarded to be stored in the DynamoDB. Currently two Lambda functions will update the Alarm record. This will cost at least 2 WRUs whenever an Alarm changes the state. <br /><br />'
-             'RRUs are used when ever user opens the dashboard or refreshes the dashboard. Two Lambda functions fetch the data. One for the Alarms in ALARM state and second fetches all Alarms. No RRUs are used when user doesn’t have the dashboard open. <br /><br />'
-             'This estimation assumes user has the dashboard open 24/7 with refresh set to every 10 seconds in order to estimate maximum cost per month. <br /><br />'
-             'Since it’s difficult to do real-time calculation of the cost without doubling the cost the estimation uses the most expensive operation (retrieval of the full list of Alarms) as base to calculate the cost.<br /><br />'
-             'Then two assumptions are done:<br />'
-             'An assumption that retrieval of Alarms in ALARM state will be less than 50% of it. 50% is then used as value. <br /><br />'
-             'Finally assumption is that updates of Alarms (using WRUs) will be FAR less than RRUs but to be sure 25% of base is used. <br /><br />'
-             'If you have a high number of Alarms that constantly change state, this can drive a higher than estimated cost.<br /><br />'
-             'Formula is: <b>actual_RRUs_for_full_list + (actual_RRUs_for_full_list * 0.75)</b><br /><br />'
-             f'In this case:<br /><b>6*60*24*30 = monthly_executions = {monthly_executions}</b><br />'
-             f'<b>consumedRRUs (by single request) = {consumedRRUs}</b><br />'
-             f'<b>total_monthly_RRUs = monthly_executions * consumedRRUs = {monthly_executions} * {consumedRRUs} = {total_monthly_RRUs}</b><br />'
-             f'<b>monthly_cost_base = total_monthly_RRUs * ($0.283 per million RRUs (eu-west-1)) = {total_monthly_RRUs} * ($0.283/1 000 000) = {round(total_monthly_RRUs*(0.283/1000000),2)}</b><br />'
-             f'<b>estimated_monthly_cost = monthly_cost_base + (monthly_cost_base * 0.75) = {total_monthly_cost} + {round(total_monthly_cost*0.75,2)} ~= {round(total_monthly_cost + round((total_monthly_cost*0.75),2), 2)}</b><br />'
-             'Remember to verify the cost using Cost Explorer!'
-             '</div>'
-             '</cwdb-action></th></tr></thead>')
+        html += build_clear_filter_action(endpoint, 'region')
+    html += '</th>'
 
-    for alarm in alarms:
-        html += '\t<tr>'
+    html += '<th>Contact Email</th>'
+    html += '<th>Operations Contact</th>'
+
+    # Cost column header with popup
+    html += (f'<th><a>Cost</a><cwdb-action action="html" event="click" display="popup">'
+             f'Estimated cost: <b>${est_monthly_cost}/mo</b><br /><br />'
+             f'<div style="background-color: var(--bg-secondary); padding: 10px; font-size: 12px;">'
+             f'Based on {consumed_rrus} RRUs per request, '
+             f'{monthly_executions} monthly executions (10s refresh 24/7).<br />'
+             f'Formula: base_cost * 1.75 (includes write + alarm-view overhead estimate).<br /><br />'
+             f'Verify actual cost using AWS Cost Explorer.'
+             f'</div></cwdb-action></th>')
+
+    html += '</tr></thead>'
+
+    # Table body
+    for alarm in paginated_alarms:
+        html += '<tr>'
+
         account_id = alarm['alarmKey'].split('#')[0]
         alarm_name = alarm['alarmKey'].split('#')[1]
-        region = 'unknown'
         try:
             region = alarm['alarmKey'].split('#')[2]
-        except:
+        except IndexError:
             region = 'unknown'
-        auxiliary_info = alarm['auxiliaryInfo']
-        aux_html = ""
-        color = "black"
-        status_label = "INS_DAT"
-        if alarm["detail"]["state"]["value"] == "ALARM":
-            color = "red"
-            status_label = alarm["detail"]["state"]["value"]
-        if alarm["detail"]["state"]["value"] == "OK":
-            color = "green"
-            status_label = alarm["detail"]["state"]["value"]
-        html += f'''\t\t<td style="color:{color}"><a style="color:{color}">{status_label}</a>
-        <cwdb-action action="call" confirmation="This will filter status {status_label}"
-                endpoint="{context.invoked_function_arn}">
-                {{ "state": "{alarm["detail"]["state"]["value"]}" }} 
-                </cwdb-action></td>'''
-        html += f'<td><a>'
-        if 'priority' in alarm:
-            match alarm["priority"]:
-                case 1:
-                    priority_name = 'CRITICAL'
-                case 2:
-                    priority_name = 'Medium'
-                case 3:
-                    priority_name = 'Low'
-                case _:
-                    priority_name = 'Not set'
 
-            html += priority_name
-            html += f'''</a><cwdb-action action="call" confirmation="This will filter {priority_name}"
-                endpoint="{context.invoked_function_arn}">
-                {{ "priority": "{alarm['priority']}" }} 
-                </cwdb-action></td>'''
+        auxiliary_info = alarm.get('auxiliaryInfo', {})
 
-        if 'AlternateContact' in auxiliary_info:
-            aux_html += "<hr /><h4>Alternate Contact (OPERATIONS)</h4>"
-            if 'Name' in auxiliary_info['AlternateContact']:
-                aux_html += f'<div>Name: {auxiliary_info["AlternateContact"]["Name"]}<br />'
-            if 'Title' in auxiliary_info['AlternateContact']:
-                aux_html += f'Title: {auxiliary_info["AlternateContact"]["Title"]}<br />'
-            if 'PhoneNumber' in auxiliary_info['AlternateContact']:
-                aux_html += f'Phone: {auxiliary_info["AlternateContact"]["PhoneNumber"]}<br />'
-            if 'EmailAddress' in auxiliary_info['AlternateContact']:
-                aux_html += (f'Email: <a href="mailto:{auxiliary_info["AlternateContact"]["EmailAddress"]}">'
-                             f'{auxiliary_info["AlternateContact"]["EmailAddress"]}</a></div>')
-
-        if 'Account' in auxiliary_info:
-            aux_html += "<hr /><h4>Account Info</h4>"
-            aux_html += f'<div>Id: {auxiliary_info["Account"]["Id"]}</div>'
-            if 'Status' in auxiliary_info['Account']:
-                aux_html += f'<div>Status: {auxiliary_info["Account"]["Status"]}<br />' \
-                   f'Email: <a href="mailto:{auxiliary_info["Account"]["Email"]}">{auxiliary_info["Account"]["Email"]}</a></div>'
-
-        aux_html += "<hr /><h4>Alarm Details</h4>"
-        aux_html += f'<div>Detail: {alarm["detail"]["alarmName"]}</div>'
-        aux_html += f'<div>State Change Value: {alarm["detail"]["state"]["value"]}</div>'
-        aux_html += f'<div>State Change Timestamp: {alarm["detail"]["state"]["timestamp"]}</div>'
-        aux_html += f'<div>State Change Reason: {alarm["detail"]["state"]["reason"]}</div>'
-
-        aux_html += f'<hr /><h4>Metric Info</h4>'
-
-        html += f'''<td><a>{get_suppress_icon()}</a><cwdb-action action="call" confirmation="WARNING! THIS WILL SUPPRESS THIS ALARM"
-                display="popup" endpoint="{configurator_lambda_function}">
-            {{ "suppress": "{alarm['alarmKey']}" }}
-            </cwdb-action> {alarm["detail"]["alarmName"]}<br />'''
-        if "metrics" in alarm["detail"]["configuration"]:
-            for metric in alarm["detail"]["configuration"]["metrics"]:
-                if 'expression' in metric:
-                    aux_html += f'<div><h4>Expression</h4>'
-                    aux_html += f'<b>Expression</b>: {metric["expression"]}'
-                    aux_html += f'<b>Label</b>: {metric["label"]}'
-                if 'metricStat' in metric:
-                    aux_html += f'<div>Namespace: {metric["metricStat"]["metric"]["namespace"]}</div>'
-                    aux_html += f'<div>Metric Name: {metric["metricStat"]["metric"]["name"]}</div>'
-                    for dimension in list(metric["metricStat"]["metric"]["dimensions"].keys()):
-                        aux_html += f'<div>{dimension}: {metric["metricStat"]["metric"]["dimensions"][dimension]}</div>'
-
-                aux_html += f'<hr />'
+        # State column
+        state_value = alarm.get("detail", {}).get("state", {}).get("value", "UNKNOWN")
+        if state_value == "ALARM":
+            color = "var(--alarm-text)"
+            status_label = "ALARM"
+        elif state_value == "OK":
+            color = "var(--ok-color)"
+            status_label = "OK"
         else:
-            print("Composite alarm detected")
-            if "alarmRule" in alarm["detail"]["configuration"]:
-                aux_html += f'<div>Alarm Rule: {alarm["detail"]["configuration"]["alarmRule"]}</div>'
-                aux_html += f'<hr />'
-        html += f'</td>'
+            color = "var(--text-secondary)"
+            status_label = "INS_DAT"
 
-        timestamp = alarm["detail"]["state"]["timestamp"].replace("+0000", "")
-        timestamp = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S.%f").strftime("%m/%d/%Y %H:%M:%S")
-        aux_html += (f'<hr /><h4>Alarm Link</h4>'
-                     f'<a href="https://eu-west-1.console.aws.amazon.com/cloudwatch/'
-                     f'home?region=eu-west-1#alarmsV2:alarm/{alarm["detail"]["alarmName"]}'
-                     f'?">https://eu-west-1.console.aws.amazon.com/cloudwatch/'
-                     f'home?region=eu-west-1#alarmsV2:alarm/${alarm["detail"]["alarmName"]}?</a>')
-        html += f'\t\t<td style="font-size: 0.8rem;">{timestamp}</td>'
-        email = ""
-        if "Email" in auxiliary_info["Account"]:
-            email = auxiliary_info["Account"]["Email"]
-        html += f'''\t\t<td><a>{account_id}</a><cwdb-action action="call" confirmation="This will filter {account_id}"
-                endpoint="{context.invoked_function_arn}">
-                {{ "account": "{account_id}" }} 
-                </cwdb-action></td>
-        
-        <td style="width: 10%;"><a>{region}</a><cwdb-action action="call" confirmation="This will filter {region}"
-                endpoint="{context.invoked_function_arn}">
-                {{ "region": "{region}" }} 
-                </cwdb-action></td><td>{email}</td>'''
-        html += f'<td>'
-        if 'AlternateContact' in auxiliary_info:
-            if 'EmailAddress' in auxiliary_info['AlternateContact']:
-                html += (
-                    f'<b><a href="mailto:{auxiliary_info["AlternateContact"]["EmailAddress"]}">'
-                    f'{auxiliary_info["AlternateContact"]["EmailAddress"]}</a></b>'
-                    f'<br />')
-            if 'PhoneNumber' in auxiliary_info['AlternateContact']:
-                html += (
-                    f'<b><a href="tel:{auxiliary_info["AlternateContact"]["PhoneNumber"]}">'
-                    f'{auxiliary_info["AlternateContact"]["PhoneNumber"]}</a></b>')
-        html += f'</td>'
-        html += (f'\t\t<td><a class="btn" style="font-size:0.6rem; '
-                 f'font-wight:400;">More</a>'
+        html += f'''<td style="color:{color}"><a style="color:{color}">{status_label}</a>
+            <cwdb-action action="call" confirmation="Apply filter: {status_label}"
+                endpoint="{endpoint}">
+                {{ "state": "{state_value}" }}
+            </cwdb-action></td>'''
+
+        # Priority column
+        priority = alarm.get('priority', 2)
+        priority_names = {1: 'CRITICAL', 2: 'Medium', 3: 'Low'}
+        priority_name = priority_names.get(priority, 'Not set')
+        html += f'''<td><a>{priority_name}</a>
+            <cwdb-action action="call" confirmation="Apply filter: {priority_name}"
+                endpoint="{endpoint}">
+                {{ "priority": "{priority}" }}
+            </cwdb-action></td>'''
+
+        # Alarm Name column with suppress/unsuppress
+        html += f'''<td><a>{get_suppress_icon()}</a>
+            <cwdb-action action="call" confirmation="WARNING: This will SUPPRESS this alarm from the dashboard"
+                display="popup" endpoint="{configurator_lambda_function}">
+                {{ "suppress": "{safe_html(alarm['alarmKey'])}" }}
+            </cwdb-action> {safe_html(alarm["detail"]["alarmName"])}</td>'''
+
+        # Timestamp column
+        try:
+            timestamp = alarm["detail"]["state"]["timestamp"].replace("+0000", "")
+            timestamp = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S.%f").strftime("%m/%d/%Y %H:%M:%S")
+        except (ValueError, KeyError):
+            timestamp = 'N/A'
+        html += f'<td style="font-size: 0.8rem;">{safe_html(timestamp)}</td>'
+
+        # Account column
+        html += f'''<td><a>{safe_html(account_id)}</a>
+            <cwdb-action action="call" confirmation="Apply filter: {safe_html(account_id)}"
+                endpoint="{endpoint}">
+                {{ "account": "{safe_html(account_id)}" }}
+            </cwdb-action></td>'''
+
+        # Region column
+        html += f'''<td style="width: 10%;"><a>{safe_html(region)}</a>
+            <cwdb-action action="call" confirmation="Apply filter: {safe_html(region)}"
+                endpoint="{endpoint}">
+                {{ "region": "{safe_html(region)}" }}
+            </cwdb-action></td>'''
+
+        # Contact email column
+        email = ''
+        if 'Account' in auxiliary_info and 'Email' in auxiliary_info['Account']:
+            email = safe_html(auxiliary_info["Account"]["Email"])
+        html += f'<td>{email}</td>'
+
+        # Operations contact column
+        html += '<td>'
+        if 'AlternateContact' in auxiliary_info and auxiliary_info['AlternateContact']:
+            contact = auxiliary_info['AlternateContact']
+            if 'EmailAddress' in contact:
+                email = safe_html(contact["EmailAddress"])
+                html += f'<b><a href="mailto:{email}">{email}</a></b><br />'
+            if 'PhoneNumber' in contact:
+                phone = safe_html(contact["PhoneNumber"])
+                html += f'<b><a href="tel:{phone}">{phone}</a></b>'
+        html += '</td>'
+
+        # More details column
+        aux_html = build_alarm_detail_popup(alarm, auxiliary_info, region)
+        html += (f'<td><a class="btn" style="font-size:0.6rem; font-weight:400;">More</a>'
                  f'<cwdb-action action="html" display="popup" event="click">'
-                 f'{aux_html}</cwdb-action></td>\n')
-    else:
-        html += '<td style="border: 0;">&nbsp;</td>'
-        html += '\t</tr>'
+                 f'{aux_html}</cwdb-action></td>')
+
+        html += '</tr>'
 
     html += '</table>'
-    print(len(html.encode('utf-8')))
+
+    # Bottom pagination
+    html += build_pagination_html(page, total_filtered_pages, endpoint)
+    html += '</div>'
+
     return html
