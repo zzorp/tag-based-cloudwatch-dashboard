@@ -1,0 +1,16 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+    commands:
+      - npm ci
+      - npm install -g aws-cdk@latest
+  pre_build:
+    commands:
+      - npm run collect
+      - npm run build
+  build:
+    commands:
+      - cdk deploy --all --require-approval never
