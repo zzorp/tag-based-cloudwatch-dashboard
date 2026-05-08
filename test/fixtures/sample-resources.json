@@ -1,0 +1,30 @@
+[
+  {
+    "ResourceARN": "arn:aws:lambda:us-east-1:123456789012:function:MyTestFunction",
+    "Tags": [
+      { "Key": "environment", "Value": "production" },
+      { "Key": "Name", "Value": "MyTestFunction" }
+    ],
+    "Configuration": {
+      "FunctionName": "MyTestFunction",
+      "MemorySize": 256,
+      "Runtime": "nodejs18.x",
+      "Timeout": 30
+    }
+  },
+  {
+    "ResourceARN": "arn:aws:dynamodb:us-east-1:123456789012:table/MyTestTable",
+    "Tags": [{ "Key": "environment", "Value": "production" }],
+    "type": "provisioned",
+    "wcu": 5,
+    "rcu": 5
+  },
+  {
+    "ResourceARN": "arn:aws:sqs:us-east-1:123456789012:MyTestQueue",
+    "Tags": [{ "Key": "environment", "Value": "production" }],
+    "Attributes": {
+      "QueueArn": "arn:aws:sqs:us-east-1:123456789012:MyTestQueue",
+      "VisibilityTimeout": "30"
+    }
+  }
+]

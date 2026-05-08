@@ -1,0 +1,144 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`MetricDashboardStack Snapshot should match the snapshot 1`] = `
+{
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+  },
+  "Resources": {
+    "GraphFactoryDynamoDBMyTestTableuseast1TestAppWritesMyTestTableuseast1TestAppC22FEE98": {
+      "Properties": {
+        "AlarmName": "Writes-MyTestTable-us-east-1-TestApp",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "DatapointsToAlarm": 2,
+        "EvaluationPeriods": 2,
+        "Metrics": [
+          {
+            "Expression": "usedWrites/accountWrites*100",
+            "Id": "expr_1",
+            "Label": "PercentageOfWrites",
+            "ReturnData": true,
+          },
+          {
+            "Id": "accountWrites",
+            "MetricStat": {
+              "Metric": {
+                "MetricName": "AccountMaxTableLevelWrites",
+                "Namespace": "AWS/DynamoDB",
+              },
+              "Period": 300,
+              "Stat": "Average",
+            },
+            "ReturnData": false,
+          },
+          {
+            "Id": "usedWrites",
+            "MetricStat": {
+              "Metric": {
+                "MetricName": "MaxProvisionedTableWriteCapacityUtilization",
+                "Namespace": ".",
+              },
+              "Period": 300,
+              "Stat": "Average",
+            },
+            "ReturnData": false,
+          },
+        ],
+        "Threshold": 90,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "GraphFactoryLambdaWSMyTestFunctionuseast1TestAppThrottlesMyTestFunctionuseast1TestApp761C56A4": {
+      "Properties": {
+        "AlarmName": "Throttles-MyTestFunction-us-east-1-TestApp",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "DatapointsToAlarm": 3,
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": "MyTestFunction",
+          },
+        ],
+        "EvaluationPeriods": 3,
+        "MetricName": "Throttles",
+        "Namespace": "AWS/Lambda",
+        "Period": 60,
+        "Statistic": "Sum",
+        "Threshold": 10,
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "GraphFactoryTestAppLambdaDashboard236EE693": {
+      "Properties": {
+        "DashboardBody": "{"widgets":[{"type":"text","width":24,"height":1,"x":0,"y":0,"properties":{"markdown":"## Lambdas us-east-1"}},{"type":"text","width":24,"height":1,"x":0,"y":1,"properties":{"markdown":"### Lambda [MyTestFunction](https://us-east-1.console.aws.amazon.com/lambda/home?region=us-east-1#/functions/MyTestFunction?tab=monitoring) Mem:256 RT:nodejs18.x"}},{"type":"metric","width":6,"height":5,"x":0,"y":2,"properties":{"view":"timeSeries","title":"Invocations MyTestFunction","region":"us-east-1","metrics":[["AWS/Lambda","Invocations","FunctionName","MyTestFunction",{"period":60,"stat":"Sum"}],["AWS/Lambda","Duration","FunctionName","MyTestFunction",{"period":60,"yAxis":"right"}]],"yAxis":{}}},{"type":"metric","width":12,"height":5,"x":6,"y":2,"properties":{"view":"timeSeries","title":"Errors/Throttles MyTestFunction","region":"us-east-1","metrics":[["AWS/Lambda","Errors","FunctionName","MyTestFunction",{"period":60,"stat":"Sum"}],["AWS/Lambda","Throttles","FunctionName","MyTestFunction",{"period":60,"stat":"Sum","yAxis":"right"}]],"yAxis":{}}},{"type":"metric","width":6,"height":5,"x":18,"y":2,"properties":{"view":"timeSeries","title":"Concurrency MyTestFunction","region":"us-east-1","metrics":[["AWS/Lambda","ConcurrentExecutions","FunctionName","MyTestFunction",{"period":60,"stat":"Maximum"}]],"yAxis":{}}}]}",
+        "DashboardName": "TestApp-Lambda-Dashboard",
+      },
+      "Type": "AWS::CloudWatch::Dashboard",
+    },
+    "TestApp45EFA9FF": {
+      "Properties": {
+        "DashboardBody": {
+          "Fn::Join": [
+            "",
+            [
+              "{"widgets":[{"type":"alarm","width":24,"height":2,"x":0,"y":0,"properties":{"title":"Alarms","alarms":["",
+              {
+                "Fn::GetAtt": [
+                  "GraphFactoryLambdaWSMyTestFunctionuseast1TestAppThrottlesMyTestFunctionuseast1TestApp761C56A4",
+                  "Arn",
+                ],
+              },
+              "","",
+              {
+                "Fn::GetAtt": [
+                  "GraphFactoryDynamoDBMyTestTableuseast1TestAppWritesMyTestTableuseast1TestAppC22FEE98",
+                  "Arn",
+                ],
+              },
+              ""]}},{"type":"text","width":24,"height":1,"x":0,"y":2,"properties":{"markdown":"# Region: us-east-1"}},{"type":"text","width":24,"height":1,"x":0,"y":3,"properties":{"markdown":"## DynamoDB"}},{"type":"metric","width":24,"height":6,"x":0,"y":4,"properties":{"view":"timeSeries","title":"RCU/WCU tot util","region":"",
+              {
+                "Ref": "AWS::Region",
+              },
+              "","metrics":[["AWS/DynamoDB","MaxProvisionedTableReadCapacityUtilization"],["AWS/DynamoDB","MaxProvisionedTableWriteCapacityUtilization"],["AWS/DynamoDB","AccountMaxTableLevelReads"],["AWS/DynamoDB","AccountMaxTableLevelWrites"]],"yAxis":{}}},{"type":"metric","width":12,"height":6,"x":0,"y":10,"properties":{"view":"timeSeries","title":"Consumed RCU MyTestTable (provisioned)","region":"us-east-1","metrics":[["AWS/DynamoDB","ConsumedReadCapacityUnits","TableName","MyTestTable",{"period":60}],["AWS/DynamoDB","ProvisionedReadCapacityUnits","TableName","MyTestTable",{"period":60}]],"yAxis":{}}},{"type":"metric","width":12,"height":6,"x":12,"y":10,"properties":{"view":"timeSeries","title":"Consumed WCU MyTestTable (provisioned)","region":"us-east-1","metrics":[["AWS/DynamoDB","ConsumedWriteCapacityUnits","TableName","MyTestTable",{"period":60}],["AWS/DynamoDB","ProvisionedWriteCapacityUnits","TableName","MyTestTable",{"period":60}]],"yAxis":{}}},{"type":"text","width":24,"height":1,"x":0,"y":18,"properties":{"markdown":"## SQS Queues"}},{"type":"text","width":24,"height":1,"x":0,"y":19,"properties":{"markdown":"#### Queue [MyTestQueue](https://us-east-1.console.aws.amazon.com/sqs/v2/home?region=us-east-1#/queues/https%3A%2F%2Fsqs.us-east-1.amazonaws.com%2F123456789012%2FMyTestQueue), Type: Standard"}},{"type":"metric","width":6,"height":6,"x":0,"y":20,"properties":{"view":"timeSeries","title":"Message Count  MyTestQueue","region":"us-east-1","metrics":[["AWS/SQS","ApproximateNumberOfMessagesVisible","QueueName","MyTestQueue",{"period":60}],["AWS/SQS","ApproximateNumberOfMessagesNotVisible","QueueName","MyTestQueue",{"period":60,"stat":"Sum","yAxis":"right"}]],"yAxis":{}}},{"type":"metric","width":6,"height":6,"x":6,"y":20,"properties":{"view":"timeSeries","title":"No Messages Sent/Received","region":"us-east-1","metrics":[["AWS/SQS","NumberOfMessagesSent","QueueName","MyTestQueue",{"period":60,"stat":"Sum"}],["AWS/SQS","NumberOfMessagesReceived","QueueName","MyTestQueue",{"period":60,"stat":"Sum","yAxis":"right"}]],"yAxis":{}}},{"type":"metric","width":6,"height":6,"x":12,"y":20,"properties":{"view":"timeSeries","title":"Messages delayed/Age oldest message MyTestQueue","region":"us-east-1","metrics":[["AWS/SQS","ApproximateNumberOfMessagesDelayed","QueueName","MyTestQueue",{"period":60,"stat":"Sum"}],["AWS/SQS","ApproximateAgeOfOldestMessage","QueueName","MyTestQueue",{"period":60,"stat":"Sum","yAxis":"right"}]],"yAxis":{}}},{"type":"metric","width":6,"height":6,"x":18,"y":20,"properties":{"view":"timeSeries","title":"Delays MyTestQueue","region":"us-east-1","metrics":[["AWS/SQS","NumberOfMessagesDeleted","QueueName","MyTestQueue",{"period":60,"stat":"Sum"}],["AWS/SQS","NumberOfEmptyReceives","QueueName","MyTestQueue",{"period":60,"stat":"Sum","yAxis":"right"}]],"yAxis":{}}}]}",
+            ],
+          ],
+        },
+        "DashboardName": "TestApp-Dashboard",
+      },
+      "Type": "AWS::CloudWatch::Dashboard",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;

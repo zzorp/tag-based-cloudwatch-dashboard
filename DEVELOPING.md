@@ -2,21 +2,33 @@
 
 ## Important concepts
 
-- `lib/config.json` is used to configure the project.
-- `data/resource_collector.py` generates a configuration file (the filename is configurable in `lib/config.json`)
-- We start with getting all tagged resources from the resource groups and tagging API. Each of these resources are represented by an JSON object that contains ARN with all tags. This is bare minimum that is needed.
-- `data/resource_collector.py` can be used to decorate a resource object if CloudWatch requires multiple dimensions or if we want to provide additional data in the dashboard, by querying respective service API directly. (see decorator functions in the `data/resource_collector.py`).
-- `sortARNsByService()` in `lib/services/graphfactory.ts` sorts resources into a map by region and service so that widgets are grouped in more natural way by service.
+- `config/config.json` is used to configure the project.
+- `npm run collect` (which runs `src/collector/index.ts`) generates a resource configuration file (the filename is configurable in `config/config.json`).
+- We start with getting all tagged resources from the Resource Groups and Tagging API. Each of these resources are represented by a JSON object that contains ARN with all tags. This is the bare minimum that is needed.
+- The resource collector can decorate a resource object if CloudWatch requires multiple dimensions or if we want to provide additional data in the dashboard, by querying respective service API directly (see decorator functions in `src/collector/index.ts`).
+- `sortARNsByService()` in `src/constructs/graph-factory.ts` sorts resources into a map by region and service so that widgets are grouped in a more natural way by service.
 - `generate()` is called after sorting to generate widgets in order.
-- Some services are broken out in separate dashboards to offload the main dashboard. For example EC2, Networking, Edge services
+- Some services are broken out in separate dashboards to offload the main dashboard. For example EC2, Networking, Edge services.
 - A CloudWatch dashboard is a grid that is 24 units wide. This will be an important knowledge when implementing dashboards.
+- The `WidgetSet` interface is defined in `src/types/widget-set.ts` and exported from `src/types/index.ts`.
+
+## Running tests, linting, and formatting
+
+| Command | Description |
+|---------|-------------|
+| `npx jest` | Run all tests |
+| `npx jest --watch` | Run tests in watch mode |
+| `npm run lint` | Check code with ESLint |
+| `npm run lint:fix` | Auto-fix ESLint issues |
+| `npm run format` | Format code with Prettier |
+| `npm run ci` | Run lint, build, and test in sequence |
 
 ## Quick start (Implementing support for new service)
 
 ### Step 1 - sorting the service resources
 
-1. In `lib/services/graphfactory.ts` and function `sortARNsByServce()` implement sorting of the resource. Sorting is done into `serviceArray`-multidimensional array. Format of the array is serviceArray[region][servicename]. Each resource can be represented as minimum a string (the ARN of the resource) but it can also be an JSON object. It's up to you to decide how you represent your resource as long as you
-handle that format in your WidgetSet-implementation.
+1. In `src/constructs/graph-factory.ts` and function `sortARNsByService()` implement sorting of the resource. Sorting is done into `serviceArray`-multidimensional array. Format of the array is serviceArray[region][servicename]. Each resource can be represented as minimum a string (the ARN of the resource) but it can also be a JSON object. It's up to you to decide how you represent your resource as long as you
+handle that format in your WidgetSet implementation.
 <details><summary>Example of `serviceArray` format with multiple services and regions:</summary>
 
 ```
@@ -61,8 +73,8 @@ handle that format in your WidgetSet-implementation.
 </details>
 <details><summary>Example of code to add to `sortARNsByService()`:</summary>
 Consider the ARN of a loadbalancer "arn:aws:elasticloadbalancing:eu-west-1:123456789012:loadbalancer/ZZZZ". We could simply probe for "elasticloadbalancing" in the ARN but that's not enough. Both V1 and V2 ELBs have "elasticloadbalancing" in the ARN. On top of that even target groups have the same string in the ARN.
-In this particular scenario it's advisable to distinguish whether an ELB is Classic Load Balancer (V1) or Network Load Balancer (V2) or Application Load Balancer (V2). 
-Consider also that we are using ":elasticloadbalancing:" instead of only "elasticloadbalancing" to better match the ARN and avoid scenarios where a resource of different service 
+In this particular scenario it's advisable to distinguish whether an ELB is Classic Load Balancer (V1) or Network Load Balancer (V2) or Application Load Balancer (V2).
+Consider also that we are using ":elasticloadbalancing:" instead of only "elasticloadbalancing" to better match the ARN and avoid scenarios where a resource of different service
 with a name "elasticloadbalancing" would be wrongfully identified as ELB. Here we know it's a V1 ELB because it has the searched string and does not have "/net/" or "/app/".
 
 Below we also named the service "elbv1". You can name your service what ever you like. You will use this to trigger your widget set processing.
@@ -82,10 +94,10 @@ Below we also named the service "elbv1". You can name your service what ever you
 
 ### Step 2 - implementing the widgets (using WidgetSet)
 
-2. Implement a widget set generator. A widget set is basically a set of widgets that contains all widgets for one single resource on your dashboard. To implement a widget set, simply create a file in `lib/services/servicewidgetsets`, give it a
-meaningful name and "extend" Construct class and "implement" WidgetSet interface. (see classes in `lib/services/servicewidgetsets` for some inspiration). Normally you will pass the resource to the class via the constructor. In the constructor, you will process the resource and generate the appropriate widgets.
-Here will you determine how you handle the resource. Remember it can be only an ARN or a decorated object. If you do have a decorated object with additional information, here is an opportunity to create a text widget and present that information.
-See how it's done in `lib/services/servicewidgetsets/ec2instances.ts`.
+2. Implement a widget set generator. A widget set is basically a set of widgets that contains all widgets for one single resource on your dashboard. To implement a widget set, create a file in `src/services/`, give it a
+meaningful name and "extend" Construct class and "implement" the WidgetSet interface from `src/types/widget-set.ts`. (See classes in `src/services/` for some inspiration). Normally you will pass the resource to the class via the constructor. In the constructor, you will process the resource and generate the appropriate widgets.
+Here you will determine how you handle the resource. Remember it can be only an ARN or a decorated object. If you do have a decorated object with additional information, here is an opportunity to create a text widget and present that information.
+See how it's done in `src/services/ec2instances.ts`.
 <details><summary>Here is an example:</summary>
 
 ```typescript
@@ -118,7 +130,7 @@ See how it's done in `lib/services/servicewidgetsets/ec2instances.ts`.
         }
 
         /***
-         * Auxdata is about being able to configure (in lib/config.json) an arbitrary tag keys that, if present on an EC2 instace, will show on the dashboard
+         * Auxdata is about being able to configure (in config/config.json) an arbitrary tag keys that, if present on an EC2 instace, will show on the dashboard
          * ***/
         let auxdata = ""
         if ( config.CustomEC2TagKeys && config.CustomEC2TagKeys.length > 0){
@@ -153,7 +165,7 @@ will start "tiling" to complete the row (Like Tetris but from below :)). Therefo
 
 ### Step 3 - integrating the WidgetSet in the GraphFactory
 
-3. When you have implemented your WidgetSet it's time to use it in `lib/graphfactory.ts` and generate the widgets. In `generate()` add your code to the switch-statement. There is a loop that goes through each of the configured regions and iterates through all services in the `serviceArray`. The switch statement will receive a service key and when you match that service key in your case you can retrieve all the resources with that service name.
+3. When you have implemented your WidgetSet it's time to use it in `src/constructs/graph-factory.ts` and generate the widgets. In `generate()` add your code to the switch-statement. There is a loop that goes through each of the configured regions and iterates through all services in the `serviceArray`. The switch statement will receive a service key and when you match that service key in your case you can retrieve all the resources with that service name.
    See below how API Gateway is implemented:
 
 ```typescript
@@ -174,3 +186,7 @@ case "apigatewayv1": {
     break;
 }
 ```
+
+### Step 4 - add a decorator (optional)
+
+4. If your service requires additional data beyond the ARN, add a decorator function in `src/collector/index.ts`. The decorator is called during `npm run collect` and enriches the resource object with service-specific details (instance metadata, configurations, etc.) that can then be used in the widget set to display richer information on the dashboard.
