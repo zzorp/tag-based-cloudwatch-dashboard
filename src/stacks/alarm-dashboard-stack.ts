@@ -56,6 +56,7 @@ export class AlarmDashboardStack extends cdk.Stack {
       partitionKey: { name: 'alarmKey', type: AttributeType.STRING },
       removalPolicy: RemovalPolicy.DESTROY,
       billingMode: BillingMode.PAY_PER_REQUEST,
+      timeToLiveAttribute: 'ttl',
     });
 
     parameterConfig['dynamoTableARN'] = dynamoTable.tableArn;
@@ -99,7 +100,7 @@ export class AlarmDashboardStack extends cdk.Stack {
     });
 
     const ddbHandlerLambdaFunction = new Function(this, 'CloudWatchAlarmDynamoDBHandlerFunction', {
-      runtime: Runtime.PYTHON_3_11,
+      runtime: Runtime.PYTHON_3_12,
       handler: 'app.lambda_handler',
       code: Code.fromAsset('functions/cwalarmdbhandler/'),
       functionName: 'CloudWatchAlarmDynamoDBHandlerCDK',
@@ -172,7 +173,7 @@ export class AlarmDashboardStack extends cdk.Stack {
     });
 
     const configurationHandlerLambdaFunction = new Function(this, 'configurationHandlerLambdaFunction', {
-      runtime: Runtime.PYTHON_3_11,
+      runtime: Runtime.PYTHON_3_12,
       handler: 'app.lambda_handler',
       code: Code.fromAsset('functions/configuration_handler/'),
       functionName: 'CloudWatchAlarmConfigurationHandlerCDK',
@@ -255,7 +256,7 @@ export class AlarmDashboardStack extends cdk.Stack {
     const alarmCWCustomFunction = new Function(this, 'AlarmCWCustomFunction', {
       code: Code.fromAsset('functions/alarm_view'),
       handler: 'app.lambda_handler',
-      runtime: Runtime.PYTHON_3_11,
+      runtime: Runtime.PYTHON_3_12,
       architecture: Architecture.X86_64,
       role: alarmCWCustomFunctionRole,
     });
@@ -306,7 +307,7 @@ export class AlarmDashboardStack extends cdk.Stack {
     const alarmListCWCustomFunction = new Function(this, 'AlarmListCWCustomFunction', {
       code: Code.fromAsset('functions/alarm_list'),
       handler: 'app.lambda_handler',
-      runtime: Runtime.PYTHON_3_11,
+      runtime: Runtime.PYTHON_3_12,
       architecture: Architecture.X86_64,
       memorySize: 165,
       role: alarmListCWCustomFunctionRole,
